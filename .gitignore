@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+*.log
+.DS_Store
+Thumbs.db
+server/data/*.db
+server/data/*.db-wal
+server/data/*.db-shm
+server/data/uploads/*
+!server/data/uploads/.gitkeep
+.env
+.env.local
+*.AppImage
+out/
+.vite/

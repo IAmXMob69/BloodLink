@@ -1,0 +1,42 @@
+{
+  "name": "hearth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source community communication for Linux and Windows — servers, channels, DMs, and voice.",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "author": "Hearth contributors",
+  "homepage": "https://github.com/hearth-chat/hearth",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hearth-chat/hearth.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hearth-chat/hearth/issues"
+  },
+  "workspaces": [
+    "server",
+    "client",
+    "desktop"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/ensure-data.js",
+    "dev": "node scripts/dev.js",
+    "server": "npm run start -w @hearth/server",
+    "client": "npm run dev -w @hearth/client",
+    "build": "npm run build -w @hearth/client",
+    "start": "npm run build && npm run start -w @hearth/server",
+    "desktop": "npm run build && npm run start -w @hearth/desktop",
+    "desktop:dev": "node scripts/dev.js --electron",
+    "pack:linux": "npm run build && npm run pack:linux -w @hearth/desktop",
+    "pack:win": "npm run build && npm run pack:win -w @hearth/desktop"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "allowScripts": {
+    "electron@37.10.3": true,
+    "esbuild@0.25.12": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

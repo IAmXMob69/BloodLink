@@ -1,0 +1,62 @@
+{
+  "name": "hearth",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "main": "main.js",
+  "scripts": {
+    "start": "node ../scripts/launch-electron.js",
+    "pack:linux": "electron-builder --linux AppImage dir",
+    "pack:win": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "org.hearthchat.desktop",
+    "productName": "Hearth",
+    "copyright": "Copyright (C) 2026 Hearth contributors",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../server",
+        "to": "server",
+        "filter": ["src/**", "package.json"]
+      },
+      {
+        "from": "../client/dist",
+        "to": "client"
+      },
+      {
+        "from": "../assets/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "linux": {
+      "target": ["AppImage", "dir"],
+      "category": "Network",
+      "icon": "../assets/icon.png",
+      "maintainer": "Hearth contributors",
+      "desktop": {
+        "Name": "Hearth",
+        "Comment": "Open-source community communication",
+        "Categories": "Network;Chat;InstantMessaging;"
+      }
+    },
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "../assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
