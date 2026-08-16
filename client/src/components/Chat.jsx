@@ -52,6 +52,9 @@ export default function Chat({ channel, me }) {
   const [emojiFor, setEmojiFor] = useState(null);
   const [picker, setPicker] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
+  const [lockUntil, setLockUntil] = useState(0);
+  const [sendErr, setSendErr] = useState("");
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const box = useRef(null);
   const ta = useRef(null);
   useEffect(() => {
@@ -77,6 +80,25 @@ export default function Chat({ channel, me }) {
       cancelled = true;
     };
   }, [channel.id]);
+  useEffect(() => {
+    if (!lockUntil) return;
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNowTick(t);
+      if (t >= lockUntil) {
+        setLockUntil(0);
+        setSendErr("");
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, [lockUntil]);
+  const locked = lockUntil > nowTick;
+  const remain = locked ? Math.max(1, Math.ceil((lockUntil - nowTick) / 1000)) : 0;
+  function applyLimit(err) {
+    const sec = Number(err?.data?.retry_after || 0);
+    if (err?.status === 429 && sec > 0) setLockUntil(Date.now() + sec * 1000);
+    setSendErr(err?.message || "Too fast.");
+  }
 
   useEffect(() => {
     if (!box.current) return;
@@ -120,7 +142,9 @@ export default function Chat({ channel, me }) {
   async function submit() {
     const content = text;
     if (!content.trim() && !editId) return;
+    if (locked && !editId) return;
     setText("");
+    setSendErr("");
     if (ta.current) ta.current.style.height = "auto";
     try {
       const out = await sealIfNeeded(content);
@@ -136,7 +160,7 @@ export default function Chat({ channel, me }) {
       }
     } catch (err) {
       setText(content);
-      alert(err.message);
+      applyLimit(err);
     }
   }
 
@@ -167,16 +191,22 @@ export default function Chat({ channel, me }) {
         setReply(null);
       }
     } catch (err) {
-      alert(err.message || "Could not upload that file.");
+      applyLimit(err);
     }
   }
 
   async function sendSticker(st) {
-    await api(`/api/channels/${channel.id}/messages`, {
-      method: "POST",
-      body: { content: "", sticker_id: st.id, reply_to: reply?.id || null },
-    });
-    setReply(null);
+    if (locked) return;
+    try {
+      await api(`/api/channels/${channel.id}/messages`, {
+        method: "POST",
+        body: { content: "", sticker_id: st.id, reply_to: reply?.id || null },
+      });
+      setReply(null);
+      setSendErr("");
+    } catch (err) {
+      applyLimit(err);
+    }
   }
 
   const others = typing.filter((u) => u.id !== me.id);
@@ -397,6 +427,7 @@ export default function Chat({ channel, me }) {
                   : `Message #${channel.name}`
             }
             value={text}
+            disabled={locked && !editId}
             onChange={onChange}
             onKeyDown={onKey}
             onPaste={(e) => {
@@ -430,6 +461,11 @@ export default function Chat({ channel, me }) {
             {Ico.smile}
           </button>
         </form>
+        {(sendErr || locked) && (
+          <div className="send-timeout" role="status">
+            {locked ? `Timeout ${remain}s` : sendErr}
+          </div>
+        )}
         {picker && (
           <div className="emoji-pop">
             {EMOJIS.map((em) => (

@@ -4,6 +4,48 @@ import { join } from "node:path";
 import { token, hashPassword, verifyPassword } from "./util.js";
 
 const hits = new Map();
+const locks = new Map();
+
+function pruneMaps(t) {
+  if (hits.size + locks.size < 8000) return;
+  for (const [k, v] of hits) {
+    const next = v.filter((x) => t - x < 20 * 60 * 1000);
+    if (next.length) hits.set(k, next);
+    else hits.delete(k);
+  }
+  for (const [k, until] of locks) {
+    if (until < t) locks.delete(k);
+  }
+}
+
+/** Sliding-window limiter with optional min-gap and penalty lock. */
+export function takeTurn(key, { max, windowMs = 60_000, lockMs, minGapMs = 0 } = {}) {
+  const t = Date.now();
+  pruneMaps(t);
+  const until = locks.get(key) || 0;
+  if (t < until) {
+    return { ok: false, retryAfter: Math.max(1, Math.ceil((until - t) / 1000)) };
+  }
+  const prev = (hits.get(key) || []).filter((x) => t - x < windowMs);
+  if (minGapMs && prev.length) {
+    const waitMs = minGapMs - (t - prev[prev.length - 1]);
+    if (waitMs > 0) {
+      return { ok: false, retryAfter: Math.max(1, Math.ceil(waitMs / 1000)) };
+    }
+  }
+  if (max != null && prev.length >= max) {
+    const waitMs = lockMs != null ? lockMs : Math.max(1000, prev[0] + windowMs - t);
+    locks.set(key, t + waitMs);
+    return { ok: false, retryAfter: Math.max(1, Math.ceil(waitMs / 1000)) };
+  }
+  prev.push(t);
+  hits.set(key, prev);
+  return { ok: true, retryAfter: 0 };
+}
+
+export function ipKey(req) {
+  return createHash("sha256").update(clientIp(req)).digest("hex").slice(0, 16);
+}
 
 export function loadGate(dataDir) {
   mkdirSync(dataDir, { recursive: true });
@@ -82,13 +124,9 @@ export function setGateCookie(res, gate, secure) {
 }
 
 export function rateLimit(req, bucket, max, windowMs) {
-  const key = `${bucket}:${createHash("sha256").update(clientIp(req)).digest("hex").slice(0, 16)}`;
-  const t = Date.now();
-  const prev = (hits.get(key) || []).filter((x) => t - x < windowMs);
-  if (prev.length >= max) return false;
-  prev.push(t);
-  hits.set(key, prev);
-  return true;
+  const r = takeTurn(`${bucket}:${ipKey(req)}`, { max, windowMs });
+  rateLimit.retryAfter = r.retryAfter;
+  return r.ok;
 }
 
 export function fingerprint(req) {
