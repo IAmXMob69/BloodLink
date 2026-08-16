@@ -1,0 +1,56 @@
+{
+  "slug": "punch",
+  "name": "Punch",
+  "description": "Big reactions. Tap to send.",
+  "cover": "01-thumbs.png",
+  "stickers": [
+    {
+      "file": "01-thumbs.png",
+      "emoji": "\ud83d\udc4d"
+    },
+    {
+      "file": "02-heart.png",
+      "emoji": "\u2764\ufe0f"
+    },
+    {
+      "file": "03-fire.png",
+      "emoji": "\ud83d\udd25"
+    },
+    {
+      "file": "04-cry.png",
+      "emoji": "\ud83d\ude2d"
+    },
+    {
+      "file": "05-clap.png",
+      "emoji": "\ud83d\udc4f"
+    },
+    {
+      "file": "06-skull.png",
+      "emoji": "\ud83d\udc80"
+    },
+    {
+      "file": "07-laugh.png",
+      "emoji": "\ud83d\ude02"
+    },
+    {
+      "file": "08-star.png",
+      "emoji": "\u2b50"
+    },
+    {
+      "file": "09-zap.png",
+      "emoji": "\u26a1"
+    },
+    {
+      "file": "10-moon.png",
+      "emoji": "\ud83c\udf19"
+    },
+    {
+      "file": "11-party.png",
+      "emoji": "\ud83c\udf89"
+    },
+    {
+      "file": "12-hundred.png",
+      "emoji": "\ud83d\udcaf"
+    }
+  ]
+}

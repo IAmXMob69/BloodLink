@@ -2,17 +2,17 @@
   "name": "hearth",
   "version": "0.1.0",
   "private": true,
-  "description": "Open-source community communication for Linux and Windows — servers, channels, DMs, and voice.",
+  "description": "BloodLink — open-source community communication for Linux, Windows, and Android — servers, channels, DMs, and voice.",
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "author": "Hearth contributors",
-  "homepage": "https://github.com/IAmXMob69/hearth",
+  "author": "BloodLink contributors",
+  "homepage": "https://github.com/IAmXMob69/BloodLink",
   "repository": {
     "type": "git",
-    "url": "https://github.com/IAmXMob69/hearth.git"
+    "url": "https://github.com/IAmXMob69/BloodLink.git"
   },
   "bugs": {
-    "url": "https://github.com/IAmXMob69/hearth/issues"
+    "url": "https://github.com/IAmXMob69/BloodLink/issues"
   },
   "workspaces": [
     "server",

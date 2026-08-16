@@ -1,11 +1,13 @@
 import React, { useEffect } from "react";
 import { api, getToken, setToken } from "./lib/api.js";
+import { loadOrCreateKeys } from "./lib/crypto.js";
 import { getState, setState, useStore } from "./lib/store.js";
 import { connect, disconnect, onSocket } from "./lib/socket.js";
 import {
   joinVoice,
   leaveVoice,
   handleRtc,
+  handleVoiceFrame,
   onVoiceJoin,
   setMuted,
   setDeafened,
@@ -21,6 +23,7 @@ import {
   JoinServer,
   InviteModal,
   CreateChannel,
+  ServerSettings,
   Settings,
   ProfilePop,
   ContextMenu,
@@ -29,6 +32,7 @@ import {
 export default function App() {
   const me = useStore((s) => s.me);
   const token = useStore((s) => s.token);
+  const error = useStore((s) => s.error);
 
   useEffect(() => {
     const t = getToken();
@@ -41,6 +45,13 @@ export default function App() {
   useEffect(() => {
     return onSocket((msg) => {
       const s = getState();
+      if (msg.type === "ready") {
+        if (msg.gate) localStorage.setItem("hearth.gate", msg.gate);
+        loadOrCreateKeys()
+          .then(({ pubJwk }) => api("/api/me", { method: "PATCH", body: { pubkey: JSON.stringify(pubJwk) } }))
+          .catch(() => {});
+      }
+      if (msg.type === "voice.frame") handleVoiceFrame(msg);
       if (msg.type === "rtc") handleRtc(msg);
       if (msg.type === "voice.join") onVoiceJoin(msg, s.me?.id);
       if (msg.type === "voice.leave" && msg.user_id === s.me?.id) {
@@ -56,6 +67,8 @@ export default function App() {
       }
     }
     function click() {
+      const cur = getState();
+      if (!cur.contextMenu && !cur.popout) return;
       setState({ contextMenu: null, popout: null });
     }
     window.addEventListener("keydown", close);
@@ -66,15 +79,55 @@ export default function App() {
     };
   }, []);
 
-  if (!getToken() && !token) return <Auth onAuthed={(d) => { setState({ token: d.token, me: d.user }); connect(); }} />;
+  if (!getToken() && !token) return <Auth onAuthed={(d) => { setState({ token: d.token, me: d.user, error: "" }); connect(); }} />;
   if (!me) {
     return (
       <div className="auth">
-        <div className="muted">Connecting to Hearth…</div>
+        <div className="auth-card" style={{ gridTemplateColumns: "1fr" }}>
+          <div className="auth-form">
+            <h2>{error ? "Can't reach BloodLink" : "Connecting to BloodLink…"}</h2>
+            <p className="lead">{error || "Talking to the host. This should only take a moment."}</p>
+            {error && (
+              <button className="btn" type="button" onClick={() => connect()}>
+                Retry
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
-  return <Shell />;
+  return (
+    <ErrorBoundary>
+      <Shell />
+    </ErrorBoundary>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(err) {
+    return { err };
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="auth">
+        <div className="auth-card" style={{ gridTemplateColumns: "1fr" }}>
+          <div className="auth-form">
+            <h2>Something went wrong</h2>
+            <p className="lead">{this.state.err.message || String(this.state.err)}</p>
+            <button className="btn" onClick={() => location.reload()}>
+              Reload BloodLink
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }
 
 function Shell() {
@@ -116,10 +169,11 @@ function Shell() {
       {modal?.type === "create-server" && <CreateServer />}
       {modal?.type === "join" && <JoinServer />}
       {modal?.type === "invite" && server && <InviteModal server={server} />}
+      {modal?.type === "server-settings" && server?.is_owner && <ServerSettings server={server} />}
       {modal?.type === "create-channel" && server && (
         <CreateChannel server={server} type={modal.channelType || "text"} />
       )}
-      {settingsOpen && <Settings me={me} />}
+      {settingsOpen && <Settings />}
       {contextMenu && <ContextMenu {...contextMenu} />}
       {popout && (
         <div onClick={(e) => e.stopPropagation()}>
@@ -183,11 +237,20 @@ function ServerRail({ servers, active }) {
                       label: "Invite people",
                       onClick: () => setState({ modal: { type: "invite" }, contextMenu: null, active: { ...getState().active, serverId: s.id, kind: "server" } }),
                     },
-                    {
-                      label: "Server settings",
-                      onClick: () => setState({ settingsOpen: true, contextMenu: null }),
-                    },
-                    "-",
+                    ...(s.is_owner
+                      ? [
+                          {
+                            label: "Server settings",
+                            onClick: () =>
+                              setState({
+                                modal: { type: "server-settings" },
+                                contextMenu: null,
+                                active: { ...getState().active, serverId: s.id, kind: "server" },
+                              }),
+                          },
+                          "-",
+                        ]
+                      : []),
                     {
                       label: s.is_owner ? "Delete server" : "Leave server",
                       danger: true,
@@ -269,7 +332,12 @@ function ServerSidebar({ server, active, voiceStates, voiceMe, me }) {
               y: 48,
               items: [
                 { label: "Invite people", onClick: () => setState({ modal: { type: "invite" }, contextMenu: null }) },
-                { label: "Create channel", onClick: () => setState({ modal: { type: "create-channel" }, contextMenu: null }) },
+                ...(server.is_owner
+                  ? [
+                      { label: "Server settings", onClick: () => setState({ modal: { type: "server-settings" }, contextMenu: null }) },
+                      { label: "Create channel", onClick: () => setState({ modal: { type: "create-channel" }, contextMenu: null }) },
+                    ]
+                  : []),
                 "-",
                 server.is_owner
                   ? {
@@ -296,6 +364,29 @@ function ServerSidebar({ server, active, voiceStates, voiceMe, me }) {
         <span>{server.name}</span>
         <span>▾</span>
       </div>
+      <button
+        type="button"
+        className="invite-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          setState({ modal: { type: "invite" } });
+        }}
+      >
+        Invite People
+      </button>
+      {server.is_owner && (
+        <button
+          type="button"
+          className="invite-btn"
+          style={{ background: "#404249", marginTop: 0 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setState({ modal: { type: "server-settings" } });
+          }}
+        >
+          Server settings
+        </button>
+      )}
       <div className="side-scroll">
         {grouped.map(({ cat, children }) => (
           <div key={cat?.id || "root"}>
@@ -454,7 +545,14 @@ function UserBar({ me, voiceMe }) {
       >
         {voiceMe?.deafened ? Ico.phonesOff : Ico.phones}
       </button>
-      <button className="icon-btn" title="User settings" onClick={() => setState({ settingsOpen: true })}>
+      <button
+        className="icon-btn"
+        title="User settings"
+        onClick={(e) => {
+          e.stopPropagation();
+          setState({ settingsOpen: true, settingsTab: "account" });
+        }}
+      >
         {Ico.gear}
       </button>
     </div>
@@ -541,7 +639,7 @@ function FriendsView() {
       {tab === "add" ? (
         <div style={{ padding: 24, maxWidth: 560 }}>
           <h3 style={{ marginTop: 0 }}>Add friend</h3>
-          <p className="muted">You can add friends with their Hearth tag. It's cAsE sEnSiTiVe!</p>
+          <p className="muted">You can add friends with their BloodLink tag. It's cAsE sEnSiTiVe!</p>
           <form onSubmit={add} style={{ display: "flex", gap: 8 }}>
             <input
               className="field"

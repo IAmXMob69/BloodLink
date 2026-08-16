@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { api, uploadFile, setServerBase, getServerBase, setToken } from "../lib/api.js";
-import { getState, setState } from "../lib/store.js";
+import { getState, setState, useStore } from "../lib/store.js";
 import { displayName, tagName } from "../lib/format.jsx";
 import Avatar from "./Avatar.jsx";
+import { StickersSettings } from "./Stickers.jsx";
 
 export function ModalShell({ children, onClose, wide }) {
   return (
@@ -95,13 +96,32 @@ export function JoinServer() {
 export function InviteModal({ server }) {
   const [code, setCode] = useState("");
   const [copied, setCopied] = useState(false);
+  const [pub, setPub] = useState(getState().publicUrl || "");
   React.useEffect(() => {
     api(`/api/servers/${server.id}/invites`, { method: "POST", body: {} })
       .then((d) => setCode(d.invite.code))
       .catch(() => {});
+    api("/api/health")
+      .then((h) => {
+        if (h.public_url) {
+          setPub(h.public_url);
+          setState({ publicUrl: h.public_url });
+        }
+      })
+      .catch(() => {});
   }, [server.id]);
+  const gate =
+    getState().gate ||
+    (typeof localStorage !== "undefined" && localStorage.getItem("hearth.gate")) ||
+    "";
+  const q = new URLSearchParams();
+  if (gate) q.set("g", gate);
+  if (code) q.set("invite", code);
+  const qs = q.toString();
+  const link = pub && qs ? `${pub.replace(/\/$/, "")}/?${qs}` : "";
+  const getApp = pub && qs ? `${pub.replace(/\/$/, "")}/download?${qs}` : "";
   function copy() {
-    navigator.clipboard?.writeText(code);
+    navigator.clipboard?.writeText(getApp || link || code);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -109,13 +129,126 @@ export function InviteModal({ server }) {
     <ModalShell onClose={() => setState({ modal: null })}>
       <h3>Invite friends to {server.name}</h3>
       <div className="body">
-        <p className="muted">Share this code. Anyone with it can join this server.</p>
-        <div className="invite-code">{code || "…"}</div>
+        <p className="muted">
+          Send the first link. Friends open it (or download the app from that page), type a username and
+          password, and they are in. They do not need your Wi‑Fi, a server address, or this code.
+          That page also has a download if they want to host their own BloodLink. Keep the link private.
+        </p>
+        {getApp && (
+          <p className="invite-code" style={{ fontSize: 14, wordBreak: "break-all", marginBottom: 8 }}>
+            {getApp}
+          </p>
+        )}
+        <div className="invite-code" style={{ fontSize: 14, wordBreak: "break-all" }}>
+          {link || (code ? `Invite code ${code} (public link still coming up…)` : "…")}
+        </div>
+        {code && (
+          <p className="muted" style={{ marginTop: 10 }}>
+            Code only: <b>{code}</b>
+          </p>
+        )}
       </div>
       <div className="foot">
         <button className="btn secondary" onClick={() => setState({ modal: null })}>Done</button>
-        <button className="btn" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+        <button className="btn" onClick={copy} disabled={!code}>{copied ? "Copied" : "Copy link"}</button>
       </div>
+    </ModalShell>
+  );
+}
+
+export function ServerSettings({ server }) {
+  const owner = Boolean(server.is_owner);
+  const [name, setName] = useState(server.name || "");
+  const [description, setDescription] = useState(server.description || "");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!owner) {
+    return (
+      <ModalShell onClose={() => setState({ modal: null })}>
+        <h3>Server settings</h3>
+        <div className="body">
+          <p className="muted">Only the host can change this server.</p>
+        </div>
+        <div className="foot">
+          <button type="button" className="btn" onClick={() => setState({ modal: null })}>
+            Close
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setErr("");
+    setMsg("");
+    setBusy(true);
+    try {
+      await api(`/api/servers/${server.id}`, {
+        method: "PATCH",
+        body: { name: name.trim(), description },
+      });
+      setMsg("Saved.");
+    } catch (ex) {
+      setErr(ex.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (owner) {
+      if (!confirm(`Delete ${server.name}? This cannot be undone.`)) return;
+      await api(`/api/servers/${server.id}`, { method: "DELETE" });
+    } else {
+      if (!confirm(`Leave ${server.name}?`)) return;
+      await api(`/api/servers/${server.id}/leave`, { method: "POST", body: {} });
+    }
+    setState({ modal: null });
+  }
+
+  return (
+    <ModalShell wide onClose={() => setState({ modal: null })}>
+      <h3>Server settings</h3>
+      <form onSubmit={save}>
+        <div className="body">
+          {err && <div className="auth-error">{err}</div>}
+          {msg && <div className="settings-ok">{msg}</div>}
+          <div className="field">
+            <label>Server name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} disabled={!owner} required minLength={2} />
+          </div>
+          <div className="field">
+            <label>Description</label>
+            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} disabled={!owner} maxLength={300} />
+          </div>
+          <p className="muted">Owner can rename the server. Anyone can invite friends or leave.</p>
+        </div>
+        <div className="foot" style={{ justifyContent: "space-between" }}>
+          <button type="button" className="btn danger" onClick={remove}>
+            {owner ? "Delete server" : "Leave server"}
+          </button>
+          <span style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setState({ modal: { type: "invite" } })}
+            >
+              Invite People
+            </button>
+            <button type="button" className="btn secondary" onClick={() => setState({ modal: null })}>
+              Close
+            </button>
+            {owner && (
+              <button className="btn" type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            )}
+          </span>
+        </div>
+      </form>
     </ModalShell>
   );
 }
@@ -161,42 +294,125 @@ export function CreateChannel({ server, type = "text" }) {
   );
 }
 
-export function Settings({ me }) {
-  const tab = getState().settingsTab;
-  const [display, setDisplay] = useState(me.display_name || "");
-  const [bio, setBio] = useState(me.bio || "");
-  const [custom, setCustom] = useState(me.custom_status || "");
+export function Settings() {
+  const tab = useStore((s) => s.settingsTab);
+  const me = useStore((s) => s.me);
+  const membersOpen = useStore((s) => s.membersOpen);
+  const sourceUrl = useStore((s) => s.sourceUrl);
+  const [display, setDisplay] = useState(me?.display_name || "");
+  const [bio, setBio] = useState(me?.bio || "");
+  const [custom, setCustom] = useState(me?.custom_status || "");
   const [instance, setInstance] = useState(getServerBase());
-  const [pwMsg, setPwMsg] = useState("");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [mics, setMics] = useState([]);
+  const [micId, setMicId] = useState(localStorage.getItem("hearth.mic") || "");
+  const [compact, setCompact] = useState(document.body.classList.contains("compact"));
 
-  async function saveProfile(e) {
-    e.preventDefault();
-    await api("/api/me", { method: "PATCH", body: { display_name: display, bio, custom_status: custom } });
-    setPwMsg("Saved.");
+  React.useEffect(() => {
+    setDisplay(me?.display_name || "");
+    setBio(me?.bio || "");
+    setCustom(me?.custom_status || "");
+  }, [me?.display_name, me?.bio, me?.custom_status]);
+
+  React.useEffect(() => {
+    if (tab !== "voice") return;
+    navigator.mediaDevices
+      ?.enumerateDevices?.()
+      .then((devs) => setMics(devs.filter((d) => d.kind === "audioinput")))
+      .catch(() => {});
+  }, [tab]);
+
+  async function saveAccount(e) {
+    e?.preventDefault?.();
+    setErr("");
+    setMsg("");
+    setBusy(true);
+    try {
+      await api("/api/me", {
+        method: "PATCH",
+        body: { display_name: display.trim() || me.username, bio, custom_status: custom },
+      });
+      setMsg("Saved.");
+    } catch (ex) {
+      setErr(ex.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onAvatar(e) {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    await uploadFile(file, "avatar");
+    setErr("");
+    setMsg("");
+    try {
+      await uploadFile(file, "avatar");
+      setMsg("Avatar updated.");
+    } catch (ex) {
+      setErr(ex.message);
+    }
   }
 
-  function setStatus(status) {
-    api("/api/me", { method: "PATCH", body: { status } });
+  async function setStatus(status) {
+    setErr("");
+    try {
+      await api("/api/me", { method: "PATCH", body: { status } });
+      setMsg(`Status set to ${status}.`);
+    } catch (ex) {
+      setErr(ex.message);
+    }
+  }
+
+  function close() {
+    setState({ settingsOpen: false });
+  }
+
+  const tabs = [
+    ["account", "My Account"],
+    ["profile", "Profile"],
+    ["privacy", "Privacy"],
+    ["appearance", "Appearance"],
+    ["stickers", "Stickers"],
+    ["voice", "Voice & Video"],
+    ["advanced", "Advanced"],
+  ];
+  const privacy = me?.privacy || { presence: false, typing: false, dms: "friends", vanish_hours: 0 };
+
+  async function savePrivacy(patch) {
+    setErr("");
+    try {
+      await api("/api/me", { method: "PATCH", body: { privacy: { ...privacy, ...patch } } });
+      setMsg("Privacy saved.");
+    } catch (ex) {
+      setErr(ex.message);
+    }
   }
 
   return (
-    <ModalShell wide onClose={() => setState({ settingsOpen: false })}>
+    <div className="settings-back" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
       <div className="settings">
         <nav>
           <div className="lab">User settings</div>
-          {["account", "profile", "appearance", "voice", "advanced"].map((t) => (
-            <button key={t} className={tab === t ? "on" : ""} onClick={() => setState({ settingsTab: t })}>
-              {t[0].toUpperCase() + t.slice(1)}
+          {tabs.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={tab === id ? "on" : ""}
+              onClick={() => {
+                setMsg("");
+                setErr("");
+                setState({ settingsTab: id });
+              }}
+            >
+              {label}
             </button>
           ))}
-          <div className="lab">Danger</div>
+          <div className="lab">Actions</div>
           <button
+            type="button"
             className="danger"
             onClick={() => {
               setToken("");
@@ -204,47 +420,62 @@ export function Settings({ me }) {
               location.reload();
             }}
           >
-            Log out
+            Log Out
           </button>
         </nav>
         <div className="pane">
-          <button className="icon-btn" style={{ float: "right" }} onClick={() => setState({ settingsOpen: false })}>
+          <button type="button" className="settings-close" onClick={close} title="Esc">
             ✕
           </button>
+
+          {err && <div className="auth-error">{err}</div>}
+          {msg && <div className="settings-ok">{msg}</div>}
+
           {tab === "account" && (
             <>
               <h3>My Account</h3>
-              <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 16 }}>
+              <div className="settings-hero">
                 <Avatar user={me} size="lg" />
                 <div>
                   <div className="strong">{displayName(me)}</div>
                   <div className="muted">{tagName(me)}</div>
                   <label className="btn sm" style={{ display: "inline-block", marginTop: 8 }}>
                     Change avatar
-                    <input type="file" accept="image/*" hidden onChange={onAvatar} />
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={onAvatar} />
                   </label>
                 </div>
               </div>
-              <form onSubmit={saveProfile}>
+              <form onSubmit={saveAccount}>
                 <div className="field">
                   <label>Display name</label>
-                  <input value={display} onChange={(e) => setDisplay(e.target.value)} />
+                  <input value={display} onChange={(e) => setDisplay(e.target.value)} maxLength={32} />
+                </div>
+                <div className="field">
+                  <label>Username</label>
+                  <input value={tagName(me)} disabled />
                 </div>
                 <div className="field">
                   <label>Email</label>
-                  <input value={me.email || ""} disabled />
+                  <input value={me?.email || "Not set"} disabled />
                 </div>
-                <button className="btn" type="submit">Save changes</button>
-                {pwMsg && <span className="muted" style={{ marginLeft: 12 }}>{pwMsg}</span>}
+                <button className="btn" type="submit" disabled={busy}>
+                  {busy ? "Saving…" : "Save changes"}
+                </button>
               </form>
             </>
           )}
+
           {tab === "profile" && (
             <>
               <h3>Profile</h3>
               <div className="field">
                 <label>Custom status</label>
-                <input value={custom} onChange={(e) => setCustom(e.target.value)} maxLength={128} />
+                <input
+                  value={custom}
+                  onChange={(e) => setCustom(e.target.value)}
+                  maxLength={128}
+                  placeholder="What are you up to?"
+                />
               </div>
               <div className="field">
                 <label>About me</label>
@@ -254,40 +485,180 @@ export function Settings({ me }) {
                 <label>Status</label>
                 <div className="status-row">
                   {["online", "idle", "dnd", "invisible"].map((s) => (
-                    <button key={s} className="btn secondary sm" onClick={() => setStatus(s)}>
+                    <button
+                      key={s}
+                      type="button"
+                      className={`btn sm ${me?.status === s ? "" : "secondary"}`}
+                      onClick={() => setStatus(s)}
+                    >
                       <span className={`dot st-${s}`} style={{ position: "static", border: 0, width: 10, height: 10 }} />
                       {s}
                     </button>
                   ))}
                 </div>
               </div>
-              <button className="btn" onClick={saveProfile}>Save</button>
+              <button type="button" className="btn" onClick={saveAccount} disabled={busy}>
+                {busy ? "Saving…" : "Save profile"}
+              </button>
             </>
           )}
+
+          {tab === "privacy" && (
+            <>
+              <h3>Privacy</h3>
+              <p className="muted">
+                BloodLink is built so the host sees as little as possible. Direct messages are sealed on your device.
+                There is no analytics, no crash phone-home, and no third-party fonts or STUN servers.
+              </p>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={privacy.presence}
+                  onChange={(e) => savePrivacy({ presence: e.target.checked })}
+                />
+                Show when I am online
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={privacy.typing}
+                  onChange={(e) => savePrivacy({ typing: e.target.checked })}
+                />
+                Send typing indicators
+              </label>
+              <div className="field">
+                <label>Who can direct-message me</label>
+                <select value={privacy.dms} onChange={(e) => savePrivacy({ dms: e.target.value })}>
+                  <option value="friends">Friends only</option>
+                  <option value="anyone">Anyone on this server</option>
+                  <option value="nobody">Nobody</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Burn sealed DMs after (hours, 0 = keep)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="8760"
+                  value={privacy.vanish_hours || 0}
+                  onChange={(e) => savePrivacy({ vanish_hours: Number(e.target.value) || 0 })}
+                />
+              </div>
+              <p className="muted">
+                Sealed DMs are encrypted before they leave this device. The database stores ciphertext.
+                Search cannot see inside them. A new device cannot read old DMs unless you copy this browser&apos;s
+                BloodLink keys.
+              </p>
+              <button
+                type="button"
+                className="btn danger"
+                onClick={async () => {
+                  if (!confirm("Permanently delete your account, sessions, and the text of messages you wrote?")) return;
+                  try {
+                    await api("/api/me", { method: "DELETE" });
+                    setToken("");
+                    location.reload();
+                  } catch (ex) {
+                    setErr(ex.message);
+                  }
+                }}
+              >
+                Delete my account
+              </button>
+            </>
+          )}
+
           {tab === "appearance" && (
             <>
               <h3>Appearance</h3>
-              <p className="muted">Hearth ships with a dark theme designed for long conversations. Light theme is welcome as a pull request.</p>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={membersOpen}
+                  onChange={(e) => setState({ membersOpen: e.target.checked })}
+                />
+                Show member list
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={compact}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setCompact(on);
+                    document.body.classList.toggle("compact", on);
+                    localStorage.setItem("hearth.compact", on ? "1" : "0");
+                  }}
+                />
+                Compact mode
+              </label>
+              <p className="muted">BloodLink uses a dark theme built for long conversations.</p>
             </>
           )}
+
+          {tab === "stickers" && <StickersSettings />}
+
           {tab === "voice" && (
             <>
               <h3>Voice & Video</h3>
               <p className="muted">
-                Voice uses peer-to-peer WebRTC with a public STUN server. For some NATs you may need a TURN server later.
-                Grant microphone permission when you join a voice channel.
+                Voice goes through this BloodLink server only. Other people never receive your IP address.
+                There is no WebRTC and no STUN.
               </p>
+              <div className="field">
+                <label>Input device</label>
+                <select
+                  value={micId}
+                  onChange={(e) => {
+                    setMicId(e.target.value);
+                    localStorage.setItem("hearth.mic", e.target.value);
+                    setMsg("Microphone saved. Rejoin voice to apply.");
+                  }}
+                >
+                  <option value="">System default</option>
+                  {mics.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || "Microphone"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={async () => {
+                  try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    stream.getTracks().forEach((t) => t.stop());
+                    const devs = await navigator.mediaDevices.enumerateDevices();
+                    setMics(devs.filter((d) => d.kind === "audioinput"));
+                    setMsg("Microphone permission granted.");
+                  } catch (ex) {
+                    setErr(ex.message || "Could not access the microphone.");
+                  }
+                }}
+              >
+                Test microphone permission
+              </button>
             </>
           )}
+
           {tab === "advanced" && (
             <>
               <h3>Instance</h3>
-              <p className="muted">Point the desktop app at any Hearth server. Leave blank to use the local/default instance.</p>
+              <p className="muted">
+                Point this app at any BloodLink server. Leave blank to use the local instance on this machine.
+              </p>
               <div className="field">
                 <label>Server URL</label>
-                <input value={instance} onChange={(e) => setInstance(e.target.value)} placeholder="http://192.168.1.10:3928" />
+                <input
+                  value={instance}
+                  onChange={(e) => setInstance(e.target.value)}
+                  placeholder="http://192.168.1.10:3928"
+                />
               </div>
               <button
+                type="button"
                 className="btn"
                 onClick={() => {
                   setServerBase(instance);
@@ -298,8 +669,8 @@ export function Settings({ me }) {
               </button>
               <p className="muted" style={{ marginTop: 24 }}>
                 Source:{" "}
-                <a href={getState().sourceUrl} target="_blank" rel="noreferrer">
-                  {getState().sourceUrl}
+                <a href={sourceUrl} target="_blank" rel="noreferrer">
+                  {sourceUrl}
                 </a>
                 <br />
                 License: GNU Affero GPL v3
@@ -308,7 +679,7 @@ export function Settings({ me }) {
           )}
         </div>
       </div>
-    </ModalShell>
+    </div>
   );
 }
 

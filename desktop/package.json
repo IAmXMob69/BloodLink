@@ -1,5 +1,5 @@
 {
-  "name": "hearth",
+  "name": "bloodlink",
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-or-later",
@@ -14,9 +14,9 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "org.hearthchat.desktop",
-    "productName": "Hearth",
-    "copyright": "Copyright (C) 2026 Hearth contributors",
+    "appId": "org.bloodlink.desktop",
+    "productName": "BloodLink",
+    "copyright": "Copyright (C) 2026 BloodLink contributors",
     "directories": {
       "output": "release"
     },
@@ -43,9 +43,9 @@
       "target": ["AppImage", "dir"],
       "category": "Network",
       "icon": "../assets/icon.png",
-      "maintainer": "Hearth contributors",
+      "maintainer": "BloodLink contributors",
       "desktop": {
-        "Name": "Hearth",
+        "Name": "BloodLink",
         "Comment": "Open-source community communication",
         "Categories": "Network;Chat;InstantMessaging;"
       }

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useRef, useSyncExternalStore } from "react";
 
 const listeners = new Set();
 
@@ -27,6 +27,8 @@ const initial = {
   collapsedCats: {},
   membersOpen: true,
   sourceUrl: "https://github.com/IAmXMob69/hearth",
+  publicUrl: "",
+  gate: "",
 };
 
 let state = { ...initial };
@@ -41,12 +43,18 @@ export function setState(patch) {
 }
 
 export function useStore(selector = (s) => s) {
+  const cache = useRef(null);
   return useSyncExternalStore(
     (cb) => {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    () => selector(state),
+    () => {
+      if (cache.current && cache.current.state === state) return cache.current.value;
+      const value = selector(state);
+      cache.current = { state, value };
+      return value;
+    },
     () => selector(state)
   );
 }
@@ -81,6 +89,8 @@ export function applyEvent(msg) {
         connected: true,
         connecting: false,
         sourceUrl: msg.source_url || s.sourceUrl,
+        publicUrl: msg.public_url || s.publicUrl,
+        gate: msg.gate || s.gate,
       }));
       break;
     case "user.update":

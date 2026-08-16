@@ -1,29 +1,50 @@
 import React, { useState } from "react";
-import { api, setToken, getServerBase, setServerBase } from "../lib/api.js";
+import { api, setToken, getServerBase, setServerBase, getGate } from "../lib/api.js";
 
 export default function Auth({ onAuthed }) {
-  const [mode, setMode] = useState("login");
+  const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "");
+  const invited = Boolean(params.get("invite"));
+  const [mode, setMode] = useState(invited ? "go" : "login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [email, setEmail] = useState("");
-  const [display, setDisplay] = useState("");
-  const [server, setServer] = useState(getServerBase());
-  const [showServer, setShowServer] = useState(Boolean(getServerBase()));
+  const [invite, setInvite] = useState(params.get("invite") || "");
+  const [inviteOnly, setInviteOnly] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  React.useEffect(() => {
+    getGate();
+    api("/api/health")
+      .then((h) => setInviteOnly(Boolean(h.invite_only)))
+      .catch(() => {});
+  }, []);
 
   async function submit(e) {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
-      setServerBase(server);
-      const path = mode === "login" ? "/api/login" : "/api/register";
-      const body =
-        mode === "login"
-          ? { username, password }
-          : { username, password, email, display_name: display || username };
-      const data = await api(path, { method: "POST", body });
+      setServerBase(getServerBase());
+      let data;
+      if (invited || mode === "go") {
+        try {
+          data = await api("/api/login", { method: "POST", body: { username, password } });
+        } catch (err) {
+          if (err.status === 401) {
+            data = await api("/api/register", {
+              method: "POST",
+              body: { username, password, display_name: username, invite },
+            });
+          } else throw err;
+        }
+      } else if (mode === "login") {
+        data = await api("/api/login", { method: "POST", body: { username, password } });
+      } else {
+        data = await api("/api/register", {
+          method: "POST",
+          body: { username, password, display_name: username, invite },
+        });
+      }
       setToken(data.token);
       onAuthed(data);
     } catch (err) {
@@ -39,37 +60,29 @@ export default function Auth({ onAuthed }) {
         <form className="auth-form" onSubmit={submit}>
           <div className="auth-brand">
             <img src="/icon.png" alt="" />
-            <h1>Hearth</h1>
+            <h1>BloodLink</h1>
           </div>
-          <h2>{mode === "login" ? "Welcome back!" : "Create an account"}</h2>
+          <h2>{invited ? "Join the conversation" : mode === "login" ? "Welcome back!" : "Create an account"}</h2>
           <p className="lead">
-            {mode === "login"
-              ? "We're so excited to see you again!"
-              : "Join a self-hosted community, or start your own."}
+            {invited
+              ? "Type a username and password. If you are new, this creates your account. If you have been here, this logs you in."
+              : mode === "login"
+                ? "We're so excited to see you again!"
+                : "Join this private community."}
           </p>
           {error && <div className="auth-error">{error}</div>}
-          {mode === "register" && (
-            <div className="field">
-              <label>Display name</label>
-              <input value={display} onChange={(e) => setDisplay(e.target.value)} maxLength={32} />
-            </div>
-          )}
           <div className="field">
             <label>
-              {mode === "login" ? "Username or email" : "Username"}{" "}
-              <span style={{ color: "#f23f43" }}>*</span>
+              Username <span style={{ color: "#f23f43" }}>*</span>
             </label>
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-              required
-            />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
           </div>
-          {mode === "register" && (
+          {!invited && mode === "register" && inviteOnly && (
             <div className="field">
-              <label>Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <label>
+                Invite code <span style={{ color: "#f23f43" }}>*</span>
+              </label>
+              <input value={invite} onChange={(e) => setInvite(e.target.value)} required autoComplete="off" />
             </div>
           )}
           <div className="field">
@@ -80,56 +93,56 @@ export default function Auth({ onAuthed }) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              autoComplete={invited ? "new-password" : mode === "login" ? "current-password" : "new-password"}
               required
             />
           </div>
-          <button
-            type="button"
-            className="btn ghost"
-            style={{ marginBottom: 12, fontSize: 13 }}
-            onClick={() => setShowServer((v) => !v)}
-          >
-            {showServer ? "Hide instance URL" : "Use a different instance"}
-          </button>
-          {showServer && (
-            <div className="field">
-              <label>Instance URL</label>
-              <input
-                placeholder="http://127.0.0.1:3928  (blank = this app)"
-                value={server}
-                onChange={(e) => setServer(e.target.value)}
-              />
-            </div>
+          {invited && (
+            <p className="muted" style={{ fontSize: 13 }}>
+              New here? Use at least 10 characters with a letter and a number. You will land in the same community.
+            </p>
           )}
           <button className="btn" disabled={busy} type="submit">
-            {busy ? "Please wait…" : mode === "login" ? "Log In" : "Continue"}
+            {busy ? "Please wait…" : invited ? "Continue" : mode === "login" ? "Log In" : "Continue"}
           </button>
-          <div className="auth-switch">
-            {mode === "login" ? (
-              <>
-                Need an account?{" "}
-                <button type="button" className="btn ghost" onClick={() => setMode("register")}>
-                  Register
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button type="button" className="btn ghost" onClick={() => setMode("login")}>
-                  Log In
-                </button>
-              </>
-            )}
-          </div>
+          {!invited && (
+            <div className="auth-switch">
+              {mode === "login" ? (
+                <>
+                  Need an account?{" "}
+                  <button type="button" className="btn ghost" onClick={() => setMode("register")}>
+                    Register
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{" "}
+                  <button type="button" className="btn ghost" onClick={() => setMode("login")}>
+                    Log In
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </form>
         <aside className="auth-aside">
           <img src="/icon.png" alt="" width="72" height="72" style={{ borderRadius: 16 }} />
-          <h3>Your own Discord-style space.</h3>
+          <h3>{invited ? "Private invite" : "BloodLink"}</h3>
           <p>
-            Servers, text and voice channels, DMs, friends, reactions, and file sharing — self-hosted
-            and AGPL licensed. Run it on this machine or join a friend's instance.
+            {invited
+              ? "Nobody else sees your IP. Direct messages are sealed. This computer is only a client — the host's machine is the server."
+              : "Self-hosted community chat. Sealed DMs. No ads."}
           </p>
+          <p className="muted" style={{ marginTop: 18, fontSize: 13 }}>
+            Want your own community instead? Download the host pack and run it on your PC.
+          </p>
+          <a
+            className="btn secondary"
+            style={{ display: "block", textAlign: "center", textDecoration: "none", marginTop: 8 }}
+            href={`/download/BloodLink-Host.zip${getGate() ? `?g=${encodeURIComponent(getGate())}` : ""}`}
+          >
+            Host your own BloodLink
+          </a>
         </aside>
       </div>
     </div>

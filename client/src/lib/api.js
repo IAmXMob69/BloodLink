@@ -1,5 +1,14 @@
 const KEY = "hearth.token";
 const SERVER_KEY = "hearth.server";
+const GATE_KEY = "hearth.gate";
+
+export function getGate() {
+  if (typeof location !== "undefined") {
+    const g = new URLSearchParams(location.search).get("g");
+    if (g) localStorage.setItem(GATE_KEY, g);
+  }
+  return localStorage.getItem(GATE_KEY) || "";
+}
 
 export function getToken() {
   return localStorage.getItem(KEY) || "";
@@ -40,6 +49,8 @@ export async function api(path, { method = "GET", body, raw, headers } = {}) {
   const token = getToken();
   const h = { ...(headers || {}) };
   if (token) h.Authorization = `Bearer ${token}`;
+  const gate = getGate();
+  if (gate) h["X-Hearth-Gate"] = gate;
   if (body !== undefined && !raw) h["Content-Type"] = "application/json";
   const res = await fetch(resolve(path), {
     method,
@@ -63,17 +74,18 @@ export async function api(path, { method = "GET", body, raw, headers } = {}) {
 }
 
 export function wsUrl() {
+  const gate = getGate();
+  const q = gate ? `?g=${encodeURIComponent(gate)}` : "";
   const base = getServerBase();
-  const tok = getToken();
   if (base) {
     const u = new URL(base);
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
     u.pathname = "/ws";
-    u.search = `token=${encodeURIComponent(tok)}`;
-    return u.toString();
+    u.search = "";
+    return u.toString() + q;
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${location.host}/ws?token=${encodeURIComponent(tok)}`;
+  return `${proto}://${location.host}/ws${q}`;
 }
 
 export async function uploadFile(file, kind = "attachment") {
@@ -84,6 +96,7 @@ export async function uploadFile(file, kind = "attachment") {
       Authorization: `Bearer ${token}`,
       "X-Filename": file.name || "file",
       "X-Kind": kind,
+      ...(getGate() ? { "X-Hearth-Gate": getGate() } : {}),
     },
     body: file,
   });

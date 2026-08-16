@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Hearth
+Name=BloodLink
 Comment=Open-source community communication
-Exec=hearth
-Icon=hearth
+Exec=bloodlink
+Icon=bloodlink
 Terminal=false
 Categories=Network;Chat;InstantMessaging;
 StartupWMClass=hearth
-Keywords=chat;discord;voice;im;
+Keywords=chat;discord;voice;im;bloodlink;

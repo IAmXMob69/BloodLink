@@ -1,13 +1,13 @@
-# Contributing to Hearth
+# Contributing to BloodLink
 
-Hearth is free software. Patches, issues, and design notes are welcome.
+BloodLink is free software. Patches, issues, and design notes are welcome.
 
 ## Dev setup (Arch Linux)
 
 ```bash
 sudo pacman -S nodejs npm git
 git clone https://github.com/IAmXMob69/hearth.git
-cd hearth
+cd BloodLink
 npm install
 npm run dev
 ```
@@ -29,7 +29,7 @@ On Windows, install Node.js 22.5+ from nodejs.org, then the same `npm` commands.
 - Do not add telemetry, ads, or closed-source binaries.
 - Server changes that affect hosted instances must stay AGPL-3.0-or-later.
 - Prefer Node built-ins (`node:sqlite`, `node:crypto`, `node:http`) over new native addons.
-- Voice is a WebRTC mesh. If you add an SFU, keep it optional and documented.
+- Voice is relayed through the host server (no WebRTC). Do not add P2P that would leak IPs.
 
 ## Running tests by hand
 

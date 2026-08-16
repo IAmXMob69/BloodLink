@@ -1,0 +1,64 @@
+{
+  "slug": "droplet",
+  "name": "Droplet",
+  "description": "The official BloodLink drop.",
+  "cover": "01-hello.png",
+  "stickers": [
+    {
+      "file": "01-hello.png",
+      "emoji": "\ud83d\udc4b"
+    },
+    {
+      "file": "02-wave.png",
+      "emoji": "\ud83d\udc4b"
+    },
+    {
+      "file": "03-wink.png",
+      "emoji": "\ud83d\ude09"
+    },
+    {
+      "file": "04-love.png",
+      "emoji": "\ud83d\ude0d"
+    },
+    {
+      "file": "05-laugh.png",
+      "emoji": "\ud83d\ude02"
+    },
+    {
+      "file": "06-cry.png",
+      "emoji": "\ud83d\ude22"
+    },
+    {
+      "file": "07-angry.png",
+      "emoji": "\ud83d\ude20"
+    },
+    {
+      "file": "08-sleepy.png",
+      "emoji": "\ud83d\ude34"
+    },
+    {
+      "file": "09-shock.png",
+      "emoji": "\ud83d\ude32"
+    },
+    {
+      "file": "10-cool.png",
+      "emoji": "\ud83d\ude0e"
+    },
+    {
+      "file": "11-party.png",
+      "emoji": "\ud83e\udd73"
+    },
+    {
+      "file": "12-think.png",
+      "emoji": "\ud83e\udd14"
+    },
+    {
+      "file": "13-thumb.png",
+      "emoji": "\ud83d\udc4d"
+    },
+    {
+      "file": "14-ok.png",
+      "emoji": "\ud83d\udc4c"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Hearth as a desktop window on Linux (Xfce, etc.).
+# Start BloodLink as a desktop window on Linux (Xfce, etc.).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -11,10 +11,14 @@ if [[ ! -d node_modules ]]; then
 fi
 
 if ! curl -sf "http://127.0.0.1:${HEARTH_PORT}/api/health" >/dev/null; then
-  if [[ ! -d client/dist ]]; then
+  if command -v systemctl >/dev/null && [[ -f "$HOME/.config/systemd/user/bloodlink-server.service" ]]; then
+    systemctl --user start bloodlink-server.service
+  elif [[ ! -d client/dist ]]; then
     npm run build
+    nohup node server/src/index.js >/tmp/bloodlink-server.log 2>&1 &
+  else
+    nohup node server/src/index.js >/tmp/bloodlink-server.log 2>&1 &
   fi
-  node server/src/index.js >/tmp/hearth-server.log 2>&1 &
   for _ in $(seq 1 40); do
     curl -sf "http://127.0.0.1:${HEARTH_PORT}/api/health" >/dev/null && break
     sleep 0.2

@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -6,7 +6,13 @@ import { DatabaseSync } from "node:sqlite";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.HEARTH_DATA || join(__dirname, "..", "data");
 export const UPLOAD_DIR = join(DATA_DIR, "uploads");
-const DB_PATH = join(DATA_DIR, "hearth.db");
+function dbFile() {
+  const named = join(DATA_DIR, "bloodlink.db");
+  const legacy = join(DATA_DIR, "hearth.db");
+  if (existsSync(named) || !existsSync(legacy)) return named;
+  return legacy;
+}
+const DB_PATH = dbFile();
 
 mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -123,6 +129,19 @@ CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 `);
 
+for (const sql of [
+  "ALTER TABLE users ADD COLUMN pubkey TEXT",
+  "ALTER TABLE users ADD COLUMN privacy_json TEXT DEFAULT '{}'",
+  "ALTER TABLE messages ADD COLUMN e2e INTEGER DEFAULT 0",
+  "ALTER TABLE messages ADD COLUMN expires_at INTEGER",
+]) {
+  try {
+    db.exec(sql);
+  } catch {
+    /* column already exists */
+  }
+}
+
 export const q = {
   userById: db.prepare("SELECT * FROM users WHERE id = ?"),
   userByEmail: db.prepare("SELECT * FROM users WHERE email = ?"),
@@ -136,6 +155,13 @@ export const q = {
     `UPDATE users SET display_name = ?, bio = ?, status = ?, custom_status = ?, avatar = ?, avatar_color = ?, banner_color = ?
      WHERE id = ?`
   ),
+  updatePubkey: db.prepare("UPDATE users SET pubkey = ? WHERE id = ?"),
+  updatePrivacy: db.prepare("UPDATE users SET privacy_json = ? WHERE id = ?"),
+  deleteUserSessions: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
+  deleteUser: db.prepare("DELETE FROM users WHERE id = ?"),
+  scrubAuthor: db.prepare("UPDATE messages SET author_id = NULL, content = '', attachments = '[]' WHERE author_id = ?"),
+  userCount: db.prepare("SELECT count(*) AS n FROM users"),
+  purgeExpired: db.prepare("DELETE FROM messages WHERE expires_at IS NOT NULL AND expires_at < ?"),
   insertSession: db.prepare("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)"),
   sessionUser: db.prepare(
     "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?"
@@ -175,8 +201,8 @@ export const q = {
   nextPosition: db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS n FROM channels WHERE server_id = ?"),
 
   insertMessage: db.prepare(
-    `INSERT INTO messages (id, channel_id, author_id, content, reply_to, attachments, pinned, system, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO messages (id, channel_id, author_id, content, reply_to, attachments, pinned, system, created_at, e2e, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ),
   messageById: db.prepare("SELECT * FROM messages WHERE id = ?"),
   channelMessages: db.prepare(
@@ -190,7 +216,7 @@ export const q = {
     "SELECT * FROM messages WHERE channel_id = ? AND pinned = 1 ORDER BY created_at DESC"
   ),
   searchMessages: db.prepare(
-    `SELECT * FROM messages WHERE channel_id = ? AND content LIKE ? ORDER BY created_at DESC LIMIT 50`
+    `SELECT * FROM messages WHERE channel_id = ? AND IFNULL(e2e, 0) = 0 AND content LIKE ? ORDER BY created_at DESC LIMIT 50`
   ),
 
   addReaction: db.prepare(

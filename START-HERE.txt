@@ -1,0 +1,49 @@
+HEARTH — how this works
+=======================
+
+One person hosts on their computer. Everyone else only joins.
+
+This copy of the project is the HOST software (the server).
+Friends should NOT run install-linux.sh / install-windows.bat
+unless they want their own separate community.
+
+Friends get:
+  - the secret download/join link from Invite People, or
+  - BloodLink-Connect.zip
+
+They open it, type a username and password, and they are in.
+They do not need your Wi-Fi. They do not type a server URL.
+
+
+HOST (you, this PC)
+-------------------
+Already set up on Arch with:
+
+  systemctl --user status bloodlink-server bloodlink-tunnel
+
+Open:  http://127.0.0.1:3928
+Click a server → orange "Invite People" → Copy link → send privately.
+
+Keep this computer on when friends should be able to chat.
+
+
+FRIENDS
+-------
+1. Open the link you were sent, or unzip BloodLink-Connect.zip
+2. Windows: BloodLink.bat     Linux: ./BloodLink.sh     Phone: Chrome → Add to Home screen
+3. Username + password → Continue
+
+New people get an account. Returning people log in.
+Password: at least 10 characters, a letter and a number.
+
+
+PRIVACY
+-------
+- DMs are sealed. The host cannot read them.
+- Voice goes through the host PC. Nobody sees each other's IP.
+- Do not post the secret link on social media.
+
+
+More detail:  HOW-IT-WORKS.md
+Privacy:      PRIVACY.md
+License:      LICENSE  (AGPL-3.0)

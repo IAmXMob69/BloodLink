@@ -3,26 +3,62 @@ import { api, assetUrl, uploadFile } from "../lib/api.js";
 import { getState, setState, useStore } from "../lib/store.js";
 import { sendWs } from "../lib/socket.js";
 import { Md, displayName, timeLabel, shortTime, shouldGroup, EMOJIS } from "../lib/format.jsx";
+import { isSealed, sealFor, openText, parsePubkey } from "../lib/crypto.js";
 import Avatar from "./Avatar.jsx";
 import { Ico } from "./Icons.jsx";
+import { StickerPicker, StickerImg, isStickerAtt } from "./Stickers.jsx";
+
+const EMPTY = [];
+
+function kindOf(a) {
+  const name = `${a.url || ""} ${a.filename || ""}`;
+  const mime = a.mime || "";
+  if (/\.(png|jpe?g|gif|webp)$/i.test(name) || /^image\//.test(mime)) return "image";
+  if (/\.(mp4|webm|mov|m4v|ogv)$/i.test(name) || /^video\//.test(mime)) return "video";
+  if (/\.(mp3|ogg|wav|m4a|flac)$/i.test(name) || /^audio\//.test(mime)) return "audio";
+  return "file";
+}
+
+function MediaAttach({ a }) {
+  const [fail, setFail] = useState(false);
+  const src = assetUrl(a.url);
+  const kind = kindOf(a);
+  if (fail || kind === "file") {
+    return (
+      <a className="file-chip" href={src} target="_blank" rel="noreferrer">
+        {a.filename || "Download file"}
+      </a>
+    );
+  }
+  if (kind === "image") {
+    return <img src={src} alt={a.filename || ""} onError={() => setFail(true)} />;
+  }
+  if (kind === "video") {
+    return (
+      <video className="att-video" controls playsInline preload="metadata" onError={() => setFail(true)}>
+        <source src={src} type={a.mime || undefined} />
+      </video>
+    );
+  }
+  return <audio className="att-audio" src={src} controls preload="metadata" onError={() => setFail(true)} />;
+}
 
 export default function Chat({ channel, me }) {
-  const messages = useStore((s) => s.messages[channel.id] || []);
-  const typing = useStore((s) => s.typing[channel.id] || []);
+  const messages = useStore((s) => s.messages[channel.id] || EMPTY);
+  const typing = useStore((s) => s.typing[channel.id] || EMPTY);
   const [text, setText] = useState("");
   const [reply, setReply] = useState(null);
   const [editId, setEditId] = useState(null);
   const [emojiFor, setEmojiFor] = useState(null);
   const [picker, setPicker] = useState(false);
+  const [stickerOpen, setStickerOpen] = useState(false);
   const box = useRef(null);
   const ta = useRef(null);
-  const loaded = useRef("");
-
   useEffect(() => {
-    if (loaded.current === channel.id) return;
-    loaded.current = channel.id;
+    let cancelled = false;
     api(`/api/channels/${channel.id}/messages?limit=50`)
       .then((d) => {
+        if (cancelled) return;
         setState((s) => ({
           ...s,
           messages: { ...s.messages, [channel.id]: d.messages || [] },
@@ -37,6 +73,9 @@ export default function Chat({ channel, me }) {
         });
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [channel.id]);
 
   useEffect(() => {
@@ -55,14 +94,27 @@ export default function Chat({ channel, me }) {
     if (e.key === "Escape") {
       setReply(null);
       setEditId(null);
+      setPicker(false);
+      setStickerOpen(false);
     }
     if (e.key === "ArrowUp" && !text && messages.length) {
       const mine = [...messages].reverse().find((m) => m.author?.id === me.id && !m.system);
       if (mine) {
         setEditId(mine.id);
-        setText(mine.content);
+        if (isSealed(mine.content)) openText(mine.content).then(setText);
+        else setText(mine.content);
       }
     }
+  }
+
+  async function sealIfNeeded(content) {
+    if (channel.type !== "dm" || !content.trim()) return content;
+    const other = (getState().dms.find((d) => d.id === channel.id)?.recipients || [])[0];
+    const pub = parsePubkey(other);
+    if (!pub) {
+      throw new Error("Cannot seal this DM — the other person has no encryption key yet. Ask them to open BloodLink once.");
+    }
+    return sealFor(content, pub);
   }
 
   async function submit() {
@@ -71,13 +123,14 @@ export default function Chat({ channel, me }) {
     setText("");
     if (ta.current) ta.current.style.height = "auto";
     try {
+      const out = await sealIfNeeded(content);
       if (editId) {
-        await api(`/api/messages/${editId}`, { method: "PATCH", body: { content } });
+        await api(`/api/messages/${editId}`, { method: "PATCH", body: { content: out } });
         setEditId(null);
       } else {
         await api(`/api/channels/${channel.id}/messages`, {
           method: "POST",
-          body: { content, reply_to: reply?.id || null },
+          body: { content: out, reply_to: reply?.id || null },
         });
         setReply(null);
       }
@@ -92,26 +145,38 @@ export default function Chat({ channel, me }) {
     setText(e.target.value);
     e.target.style.height = "auto";
     e.target.style.height = Math.min(200, e.target.scrollHeight) + "px";
-    if (Date.now() - lastType > 1500) {
+    if (getState().me?.privacy?.typing && Date.now() - lastType > 1500) {
       lastType = Date.now();
       sendWs({ type: "typing", channel_id: channel.id });
     }
   }
 
   async function onFiles(files) {
-    const atts = [];
-    for (const f of files) {
-      const up = await uploadFile(f);
-      atts.push(up);
+    try {
+      const atts = [];
+      for (const f of files) {
+        const up = await uploadFile(f);
+        atts.push(up);
+      }
+      if (atts.length) {
+        await api(`/api/channels/${channel.id}/messages`, {
+          method: "POST",
+          body: { content: text, attachments: atts, reply_to: reply?.id || null },
+        });
+        setText("");
+        setReply(null);
+      }
+    } catch (err) {
+      alert(err.message || "Could not upload that file.");
     }
-    if (atts.length) {
-      await api(`/api/channels/${channel.id}/messages`, {
-        method: "POST",
-        body: { content: text, attachments: atts, reply_to: reply?.id || null },
-      });
-      setText("");
-      setReply(null);
-    }
+  }
+
+  async function sendSticker(st) {
+    await api(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      body: { content: "", sticker_id: st.id, reply_to: reply?.id || null },
+    });
+    setReply(null);
   }
 
   const others = typing.filter((u) => u.id !== me.id);
@@ -124,6 +189,13 @@ export default function Chat({ channel, me }) {
         <h2>{channel.name}</h2>
         {channel.topic && <span className="topic">{channel.topic}</span>}
         <span className="grow" />
+        <button
+          type="button"
+          className="btn sm"
+          onClick={() => setState({ modal: { type: "invite" } })}
+        >
+          Invite
+        </button>
         <Search channel={channel} />
         <button
           className="icon-btn"
@@ -137,7 +209,10 @@ export default function Chat({ channel, me }) {
         <div className="welcome">
           <div className="big-hash">{channel.type === "voice" ? Ico.speaker : Ico.hash}</div>
           <h3>Welcome to #{channel.name}!</h3>
-          <p>This is the start of the #{channel.name} channel. {channel.topic}</p>
+          <p>
+            This is the start of #{channel.name}. {channel.topic} Use <b>Invite People</b> (orange, under the
+            server name) to send friends a link. They only type a username and password.
+          </p>
         </div>
         {messages.map((m, i) => {
           const prev = messages[i - 1];
@@ -181,7 +256,7 @@ export default function Chat({ channel, me }) {
                         setState({ popout: { user: m.author, x: e.clientX, y: e.clientY } })
                       }
                     >
-                      {m.system ? "Hearth" : displayName(m.author)}
+                      {m.system ? "BloodLink" : displayName(m.author)}
                     </span>
                     <span className="when">{timeLabel(m.created_at)}</span>
                     {m.edited_at && <span className="edit-tag">(edited)</span>}
@@ -189,23 +264,36 @@ export default function Chat({ channel, me }) {
                 )}
                 {replyTo && (
                   <div className="reply-ref">
-                    {displayName(replyTo.author)}: {replyTo.content?.slice(0, 80)}
+                    {displayName(replyTo.author)}:{" "}
+                    {replyTo.content?.slice(0, 80) ||
+                      (replyTo.attachments?.some(isStickerAtt) ? "sticker" : "")}
                   </div>
                 )}
-                <div className="body">
-                  <Md text={m.content} />
-                </div>
-                {!!m.attachments?.length && (
-                  <div className="attachments">
-                    {m.attachments.map((a) =>
-                      /\.(png|jpe?g|gif|webp)$/i.test(a.url || a.filename || "") ? (
-                        <img key={a.url} src={assetUrl(a.url)} alt={a.filename} />
-                      ) : (
-                        <a key={a.url} className="file-chip" href={assetUrl(a.url)} target="_blank" rel="noreferrer">
-                          {a.filename || "file"}
-                        </a>
-                      )
+                {!!m.content && (
+                  <div className="body">
+                    {isSealed(m.content) ? <Sealed text={m.content} /> : <Md text={m.content} />}
+                    {isSealed(m.content) && (
+                      <span className="edit-tag" title="Sealed. The server cannot read this.">
+                        {" "}
+                        🔒
+                      </span>
                     )}
+                  </div>
+                )}
+                {!!m.attachments?.filter(isStickerAtt).length && (
+                  <div className="sticker-row">
+                    {m.attachments.filter(isStickerAtt).map((a) => (
+                      <StickerImg key={a.url} url={a.url} alt={a.emoji || "sticker"} className="sticker-msg" />
+                    ))}
+                  </div>
+                )}
+                {!!m.attachments?.filter((a) => !isStickerAtt(a)).length && (
+                  <div className="attachments">
+                    {m.attachments
+                      .filter((a) => !isStickerAtt(a))
+                      .map((a) => (
+                        <MediaAttach key={a.url} a={a} />
+                      ))}
                   </div>
                 )}
                 {!!m.reactions?.length && (
@@ -291,6 +379,7 @@ export default function Chat({ channel, me }) {
               type="file"
               hidden
               multiple
+              accept="video/mp4,video/webm,video/quicktime,video/*,image/*,audio/*,.pdf,.zip,.txt,.mov,.m4v"
               onChange={(e) => {
                 onFiles([...e.target.files]);
                 e.target.value = "";
@@ -300,7 +389,13 @@ export default function Chat({ channel, me }) {
           <textarea
             ref={ta}
             rows={1}
-            placeholder={editId ? "Edit message" : `Message #${channel.name}`}
+            placeholder={
+              editId
+                ? "Edit message"
+                : channel.type === "dm"
+                  ? "Sealed message (only you two can read this)"
+                  : `Message #${channel.name}`
+            }
             value={text}
             onChange={onChange}
             onKeyDown={onKey}
@@ -312,7 +407,26 @@ export default function Chat({ channel, me }) {
               }
             }}
           />
-          <button type="button" className="icon-btn" onClick={() => setPicker((v) => !v)}>
+          <button
+            type="button"
+            className="icon-btn"
+            title="Stickers"
+            onClick={() => {
+              setStickerOpen((v) => !v);
+              setPicker(false);
+            }}
+          >
+            {Ico.sticker}
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title="Emoji"
+            onClick={() => {
+              setPicker((v) => !v);
+              setStickerOpen(false);
+            }}
+          >
             {Ico.smile}
           </button>
         </form>
@@ -332,6 +446,12 @@ export default function Chat({ channel, me }) {
             ))}
           </div>
         )}
+        {stickerOpen && (
+          <StickerPicker
+            onSend={sendSticker}
+            onClose={() => setStickerOpen(false)}
+          />
+        )}
         {!!others.length && (
           <div className="typing">
             <b>{others.map((u) => displayName(u)).join(", ")}</b>{" "}
@@ -341,6 +461,20 @@ export default function Chat({ channel, me }) {
       </div>
     </div>
   );
+}
+
+function Sealed({ text }) {
+  const [plain, setPlain] = useState("…");
+  useEffect(() => {
+    let live = true;
+    openText(text).then((p) => {
+      if (live) setPlain(p);
+    });
+    return () => {
+      live = false;
+    };
+  }, [text]);
+  return <Md text={plain} />;
 }
 
 function Search({ channel }) {
