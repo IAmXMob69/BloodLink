@@ -6,7 +6,7 @@ Hearth is free software. Patches, issues, and design notes are welcome.
 
 ```bash
 sudo pacman -S nodejs npm git
-git clone https://github.com/hearth-chat/hearth.git
+git clone https://github.com/IAmXMob69/hearth.git
 cd hearth
 npm install
 npm run dev

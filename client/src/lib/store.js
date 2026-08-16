@@ -26,7 +26,7 @@ const initial = {
   searchResults: null,
   collapsedCats: {},
   membersOpen: true,
-  sourceUrl: "https://github.com/hearth-chat/hearth",
+  sourceUrl: "https://github.com/IAmXMob69/hearth",
 };
 
 let state = { ...initial };
