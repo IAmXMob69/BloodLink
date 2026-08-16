@@ -101,6 +101,11 @@ export async function uploadFile(file, kind = "attachment") {
     body: file,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Upload failed");
+  if (!res.ok) {
+    const err = new Error(data.error || "Upload failed");
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
   return data;
 }

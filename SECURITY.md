@@ -15,5 +15,5 @@ BloodLink is a self-hosted chat server. Treat an instance like email:
 Known limits in 0.1:
 
 - Voice uses a public STUN server. There is no TURN, so some NATs will fail.
-- There is no rate-limit across restarts (in-memory only on a future pass).
+- Rate limits are in-memory (reset on server restart): 2s between messages, 6 per 20s then a 30s timeout, 50 per 15 minutes, plus IP and upload caps.
 - Sessions are random tokens stored in SQLite; they do not expire automatically.

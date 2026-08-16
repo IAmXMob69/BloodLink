@@ -24,6 +24,8 @@ import {
   gateOk,
   setGateCookie,
   rateLimit,
+  takeTurn,
+  ipKey,
   dummyVerify,
   isPublicHop,
 } from "./harden.js";
@@ -454,12 +456,45 @@ function securityHeaders(res, { html = false, https = false } = {}) {
 function json(res, status, data) {
   const body = JSON.stringify(data);
   securityHeaders(res);
-  res.writeHead(status, {
+  const headers = {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(body),
     "Cache-Control": "no-store",
-  });
+  };
+  if (status === 429 && data?.retry_after) {
+    headers["Retry-After"] = String(data.retry_after);
+  }
+  res.writeHead(status, headers);
   res.end(body);
+}
+
+function tooFast(res, retryAfter, error) {
+  json(res, 429, { error, retry_after: retryAfter });
+  return true;
+}
+
+/** Twitter-style short timeout on sends so bots cannot flood the host. */
+function sendTimeout(req, res, user) {
+  const gapMs = Number(process.env.HEARTH_MSG_GAP_MS || 2000);
+  const uid = user.id;
+  const gap = takeTurn(`msg-gap:${uid}`, { minGapMs: gapMs, windowMs: Math.max(gapMs, 2000) });
+  if (!gap.ok) {
+    return tooFast(res, gap.retryAfter, `You're sending too fast. Wait ${gap.retryAfter}s.`);
+  }
+  const burst = takeTurn(`msg-burst:${uid}`, { max: 6, windowMs: 20_000, lockMs: 30_000 });
+  if (!burst.ok) {
+    return tooFast(res, burst.retryAfter, `Timeout — try again in ${burst.retryAfter}s.`);
+  }
+  const window = takeTurn(`msg-win:${uid}`, { max: 50, windowMs: 15 * 60_000, lockMs: 10 * 60_000 });
+  if (!window.ok) {
+    const mins = Math.max(1, Math.ceil(window.retryAfter / 60));
+    return tooFast(res, window.retryAfter, `Send limit reached. Try again in ${mins} min.`);
+  }
+  const ip = takeTurn(`msg-ip:${ipKey(req)}`, { max: 12, windowMs: 20_000, lockMs: 60_000 });
+  if (!ip.ok) {
+    return tooFast(res, ip.retryAfter, `This connection is sending too fast. Wait ${ip.retryAfter}s.`);
+  }
+  return false;
 }
 
 function cors(req, res) {
@@ -534,7 +569,10 @@ route("POST", "/api/register", async (req, res, _p, body) => {
     return json(res, 400, { error: "Username must be 2–32 letters, numbers, or underscores." });
   }
   if (!rateLimit(req, "reg", 3, 15 * 60 * 1000)) {
-    return json(res, 429, { error: "Too many attempts. Try later." });
+    return json(res, 429, {
+      error: "Too many sign-up attempts. Try later.",
+      retry_after: rateLimit.retryAfter || 60,
+    });
   }
   if (!validPassword(password, username)) {
     return json(res, 400, { error: "Password must be at least 10 characters and include a letter and a number." });
@@ -574,7 +612,10 @@ route("POST", "/api/register", async (req, res, _p, body) => {
 
 route("POST", "/api/login", async (req, res, _p, body) => {
   if (!rateLimit(req, "login", 8, 10 * 60 * 1000)) {
-    return json(res, 429, { error: "Too many attempts. Try later." });
+    return json(res, 429, {
+      error: "Too many login attempts. Try later.",
+      retry_after: rateLimit.retryAfter || 60,
+    });
   }
   const login = clampText(body.username || body.email || "", 120).trim();
   const password = body.password || "";
@@ -787,6 +828,7 @@ route("POST", "/api/channels/:id/messages", async (req, res, p, body, user) => {
   if (channel.type === "voice" || channel.type === "category") {
     return json(res, 400, { error: "Cannot send messages here." });
   }
+  if (sendTimeout(req, res, user)) return;
   const content = clampText(body.content || "", 4000);
   let attachments = sanitizeAttachments(body.attachments);
   if (body.sticker_id) {
@@ -921,6 +963,13 @@ route("GET", "/api/invites/:code", async (req, res, p) => {
 }, { authRequired: false });
 
 route("POST", "/api/friends", async (req, res, _p, body, user) => {
+  const fr = takeTurn(`friend:${user.id}`, { max: 8, windowMs: 10 * 60_000, lockMs: 10 * 60_000 });
+  if (!fr.ok) {
+    return json(res, 429, {
+      error: `Too many friend requests. Try again in ${Math.ceil(fr.retryAfter / 60)} min.`,
+      retry_after: fr.retryAfter,
+    });
+  }
   let username = clampText(body.username || "", 40).trim();
   let tg = clampText(body.tag || "", 4);
   if (username.includes("#")) {
@@ -1126,6 +1175,13 @@ route("DELETE", "/api/sticker-packs/:id/install", async (_req, res, p, _b, user)
 });
 
 route("POST", "/api/upload", async (req, res, _p, _b, user) => {
+  const up = takeTurn(`up:${user.id}`, { max: 4, windowMs: 30_000, lockMs: 30_000, minGapMs: 1000 });
+  if (!up.ok) {
+    return json(res, 429, {
+      error: `Upload timeout — try again in ${up.retryAfter}s.`,
+      retry_after: up.retryAfter,
+    });
+  }
   const rawKind = String(req.headers["x-kind"] || "attachment");
   const kind = rawKind === "avatar" || rawKind === "sticker" ? rawKind : "attachment";
   const original = clampText(req.headers["x-filename"] || "file.bin", 180).replace(/[^\w.\-]+/g, "_");
@@ -1185,7 +1241,15 @@ const server = http.createServer(async (req, res) => {
     setGateCookie(res, GATE, httpsHop);
   }
   if (!allowed) return stealth404(res);
-  if (!rateLimit(req, "all", 120, 60 * 1000)) return stealth404(res);
+  if (!rateLimit(req, "all", 180, 60 * 1000)) {
+    if (path.startsWith("/api/")) {
+      return json(res, 429, {
+        error: "Too many requests. Slow down.",
+        retry_after: rateLimit.retryAfter || 30,
+      });
+    }
+    return stealth404(res);
+  }
 
   if (path.startsWith("/uploads/")) {
     const name = path.slice("/uploads/".length);
@@ -1389,6 +1453,9 @@ wss.on("connection", (ws) => {
       send(ws, { type: "pong" });
       return;
     }
+
+    const frames = takeTurn(`ws:${me.id}`, { max: 60, windowMs: 10_000, lockMs: 15_000 });
+    if (!frames.ok) return;
 
     if (msg.type === "typing") {
       if (!privacyOf(me).typing) return;

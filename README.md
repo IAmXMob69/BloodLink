@@ -75,6 +75,7 @@ npm run desktop:dev  # Electron against Vite
 | `HEARTH_OPEN_SIGNUP` | unset (invite-only after first user) | Set `1` to allow open registration |
 | `HEARTH_SESSION_DAYS` | `7` | Session lifetime |
 | `HEARTH_GATE` | file `…/gate` | Secret for public access |
+| `HEARTH_MSG_GAP_MS` | `2000` | Minimum ms between chat messages (anti-bot) |
 
 ```
 server/    Node HTTP + WebSocket + SQLite
