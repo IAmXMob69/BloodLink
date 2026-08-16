@@ -116,15 +116,15 @@ export function clampText(s, max) {
 }
 
 export const PERMS = {
-  ADMIN: 1 << 0,
-  MANAGE_SERVER: 1 << 1,
-  MANAGE_CHANNELS: 1 << 2,
-  MANAGE_MESSAGES: 1 << 3,
-  KICK: 1 << 4,
-  SEND_MESSAGES: 1 << 5,
-  CONNECT: 1 << 6,
-  SPEAK: 1 << 7,
-  MENTION_EVERYONE: 1 << 8,
+  ADMIN: 1,
+  MANAGE_SERVER: 2,
+  MANAGE_CHANNELS: 4,
+  MANAGE_MESSAGES: 8,
+  KICK: 16,
+  SEND_MESSAGES: 32,
+  CONNECT: 64,
+  SPEAK: 128,
+  MENTION_EVERYONE: 256,
 };
 
 export const DEFAULT_PERMS =

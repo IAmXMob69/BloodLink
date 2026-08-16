@@ -1,0 +1,4 @@
+*.js linguist-language=JavaScript
+*.jsx linguist-language=JavaScript
+PKGBUILD linguist-language=PKGBUILD
+*.sh linguist-language=Shell
