@@ -4,17 +4,17 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="BloodLink — open-source community communication for Linux and Windows"
 arch=('x86_64')
-url="https://github.com/IAmXMob69/hearth"
+url="https://github.com/IAmXMob69/BloodLink"
 license=('AGPL-3.0-or-later')
 depends=('nodejs')
 makedepends=('npm' 'git')
 provides=('hearth')
 conflicts=('hearth')
-source=("git+https://github.com/IAmXMob69/hearth.git")
+source=("git+https://github.com/IAmXMob69/BloodLink.git")
 sha256sums=('SKIP')
 
 pkgver() {
-  cd hearth
+  cd BloodLink
   git describe --tags --always 2>/dev/null | sed 's/^v//;s/-/./g' || echo 0.1.0
 }
 

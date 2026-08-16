@@ -26,7 +26,7 @@ const initial = {
   searchResults: null,
   collapsedCats: {},
   membersOpen: true,
-  sourceUrl: "https://github.com/IAmXMob69/hearth",
+  sourceUrl: "https://github.com/IAmXMob69/BloodLink",
   publicUrl: "",
   gate: "",
 };
