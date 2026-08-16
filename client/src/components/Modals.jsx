@@ -101,7 +101,7 @@ export function InviteModal({ server }) {
     api(`/api/servers/${server.id}/invites`, { method: "POST", body: {} })
       .then((d) => setCode(d.invite.code))
       .catch(() => {});
-    api("/api/health")
+    api("/api/runtime")
       .then((h) => {
         if (h.public_url) {
           setPub(h.public_url);

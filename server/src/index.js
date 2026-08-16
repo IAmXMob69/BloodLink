@@ -540,13 +540,15 @@ function route(method, pattern, handler, { authRequired = true } = {}) {
 }
 
 route("GET", "/api/health", async (_req, res) => {
-  json(res, 200, {
-    ok: true,
-    invite_only: !OPEN_SIGNUP,
-    sealed_dms: true,
-    public_url: publicUrl() || "",
-  });
+  json(res, 200, { ok: true, invite_only: !OPEN_SIGNUP });
 }, { authRequired: false });
+
+route("GET", "/api/runtime", async (_req, res, _p, _b, user) => {
+  json(res, 200, {
+    public_url: publicUrl() || "",
+    source: SOURCE_URL,
+  });
+});
 
 route("GET", "/api/source", async (_req, res) => {
   json(res, 200, { source: SOURCE_URL, license: "AGPL-3.0-or-later" });

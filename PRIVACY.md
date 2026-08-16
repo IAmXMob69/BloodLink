@@ -48,7 +48,7 @@ HEARTH_HOST=127.0.0.1    # listen only on localhost
 
 ## Hidden from strangers
 
-Internet visitors without the secret join link get a blank **404**. Search engines are told not to index. Login is rate-limited. Invites are long random codes. The public health page no longer lists your URL or user count.
+Internet visitors without the secret join link get a blank **404**. Search engines are told not to index. Login is rate-limited. Invites are long random codes. `/api/health` only reports that the process is up — not your tunnel URL or user count.
 
 This is **not** unhackable. A stolen join link, a compromised friend device, or a bug can still leak access. Sealed DMs still cannot be read from the server disk.
 
@@ -56,5 +56,5 @@ This is **not** unhackable. A stolen join link, a compromised friend device, or 
 
 - Channel chat in a server is **not** E2E (members of that server, and the host, can read it).
 - Metadata (membership, who DMs whom, when) is visible to the host.
-- Voice peers on a LAN can see each other’s local IPs. That is how WebRTC connects without a STUN server.
+- Voice is relayed by the host (not WebRTC). The host can see that you are in a voice channel.
 - This is not a warrant canary and not a substitute for Qubes + Tor. It is a self-hosted chat app that refuses to spy on you.
