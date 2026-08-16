@@ -88,7 +88,7 @@ function inline(s, key) {
     else if (tok.startsWith("`")) parts.push(<code key={`${key}${n++}`} className="md-code">{tok.slice(1, -1)}</code>);
     else if (tok.startsWith("http")) {
       parts.push(
-        <a key={`${key}${n++}`} href={tok} target="_blank" rel="noreferrer">
+        <a key={`${key}${n++}`} href={tok} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
           {tok}
         </a>
       );

@@ -7,6 +7,8 @@ const fs = require("fs");
 const PORT = Number(process.env.HEARTH_PORT || 3928);
 const DEV = process.argv.includes("--dev") || process.env.HEARTH_DEV === "1";
 const DEV_URL = process.env.HEARTH_DEV_URL || "http://127.0.0.1:5173";
+const connectArg = process.argv.find((a) => a.startsWith("--connect="));
+const CONNECT = process.env.HEARTH_CONNECT || (connectArg ? connectArg.slice("--connect=".length) : "");
 
 let win = null;
 let serverProc = null;
@@ -30,10 +32,12 @@ function waitFor(url, tries = 40) {
     const tick = (n) => {
       const req = http.get(url, (res) => {
         res.resume();
-        resolve();
+        if (res.statusCode >= 200 && res.statusCode < 400) resolve();
+        else if (n <= 0) reject(new Error("BloodLink server did not start"));
+        else setTimeout(() => tick(n - 1), 250);
       });
       req.on("error", () => {
-        if (n <= 0) reject(new Error("Hearth server did not start"));
+        if (n <= 0) reject(new Error("BloodLink server did not start"));
         else setTimeout(() => tick(n - 1), 250);
       });
     };
@@ -42,7 +46,12 @@ function waitFor(url, tries = 40) {
 }
 
 function startServer() {
-  if (DEV) return Promise.resolve();
+  if (DEV || CONNECT) return Promise.resolve();
+  // Host machine already runs bloodlink-server.service — do not bind 3928 twice.
+  return waitFor(`http://127.0.0.1:${PORT}/api/health`, 16).catch(() => startOwnServer());
+}
+
+function startOwnServer() {
   const entry = serverEntry();
   const env = {
     ...process.env,
@@ -52,12 +61,19 @@ function startServer() {
   };
   const clientPacked = path.join(process.resourcesPath || "", "client");
   if (fs.existsSync(path.join(clientPacked, "index.html"))) env.HEARTH_CLIENT = clientPacked;
-  serverProc = spawn(process.execPath.includes("electron") ? "node" : process.execPath, [entry], {
+  const nodeBin =
+    process.execPath.toLowerCase().includes("electron")
+      ? process.platform === "win32"
+        ? "node.exe"
+        : "node"
+      : process.execPath;
+  serverProc = spawn(nodeBin, [entry], {
     env,
     stdio: "inherit",
+    windowsHide: true,
   });
   serverProc.on("exit", (code) => {
-    if (code && win) console.error("Hearth server exited", code);
+    if (code && win) console.error("BloodLink server exited", code);
   });
   return waitFor(`http://127.0.0.1:${PORT}/api/health`);
 }
@@ -69,7 +85,7 @@ function createWindow() {
     minWidth: 940,
     minHeight: 560,
     backgroundColor: "#1e1f22",
-    title: "Hearth",
+    title: "BloodLink",
     icon: iconPath(),
     autoHideMenuBar: true,
     webPreferences: {
@@ -79,7 +95,7 @@ function createWindow() {
       sandbox: true,
     },
   });
-  const url = DEV ? DEV_URL : `http://127.0.0.1:${PORT}`;
+  const url = CONNECT || (DEV ? DEV_URL : `http://127.0.0.1:${PORT}`);
   win.loadURL(url);
   win.webContents.setWindowOpenHandler(({ url: next }) => {
     shell.openExternal(next);
@@ -87,7 +103,7 @@ function createWindow() {
   });
   const menu = Menu.buildFromTemplate([
     {
-      label: "Hearth",
+      label: "BloodLink",
       submenu: [
         { role: "about" },
         { type: "separator" },

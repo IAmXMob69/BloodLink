@@ -1,0 +1,58 @@
+BLOODLINK — host your own
+=========================
+
+This zip is the SERVER. Unzip it on YOUR computer.
+It does NOT join someone else's community. It starts a new one that you control.
+
+You need Node.js 22.5 or newer (https://nodejs.org/ — LTS is fine).
+
+
+LINUX / macOS
+-------------
+1. Unzip this folder.
+2. Open a terminal in it.
+3. chmod +x install-linux.sh
+4. ./install-linux.sh
+
+That installs dependencies (first time), builds the app if needed, and starts
+BloodLink at  http://127.0.0.1:3928
+Leave the terminal open. Open that address in a browser.
+
+
+WINDOWS
+-------
+1. Unzip this folder.
+2. Double-click  install-windows.bat
+3. If Windows asks about Node.js, install LTS from nodejs.org and run the file again.
+
+A browser tab should open to  http://127.0.0.1:3928
+
+
+FIRST TIME
+----------
+Register a username + password. The first account is the host.
+Create or use the default server. Click orange  Invite People  and send
+that secret link to friends. They only type a username and password.
+
+
+INTERNET (optional)
+-------------------
+Same Wi‑Fi: friends can use  http://YOUR-PC-IP:3928  if the firewall allows port 3928.
+
+From anywhere: keep this PC on, then in another terminal:
+
+  ./scripts/bloodlink-tunnel.sh
+
+That prints a https://….trycloudflare.com  address. Use Invite People after
+the tunnel is up so the link is public. The address can change if you restart
+the tunnel.
+
+
+DO NOT
+------
+- Do not run this if you only wanted to JOIN a friend's BloodLink.
+  For that, use BloodLink-Connect.zip or their Invite People link.
+
+
+Privacy: DMs are sealed. Voice goes through your PC. No ads.
+More: HOW-IT-WORKS.md   PRIVACY.md   LICENSE (AGPL-3.0)

@@ -1,4 +1,4 @@
-import { wsUrl } from "./api.js";
+import { getToken, setToken, wsUrl } from "./api.js";
 import { applyEvent, setState } from "./store.js";
 
 let ws = null;
@@ -32,6 +32,12 @@ export function connect() {
   ws = sock;
   sock.onopen = () => {
     retries = 0;
+    const tok = getToken();
+    if (tok) sock.send(JSON.stringify({ type: "auth", token: tok }));
+    if (ping) clearInterval(ping);
+    ping = setInterval(() => {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "ping" }));
+    }, 20000);
   };
   sock.onmessage = (ev) => {
     let msg;
@@ -40,11 +46,26 @@ export function connect() {
     } catch {
       return;
     }
+    if (msg.type === "pong") return;
+    if (msg.type === "error" && /invalid token/i.test(msg.error || "")) {
+      setToken("");
+      setState({ token: "", me: null, connected: false, connecting: false, error: "Session expired. Sign in again." });
+      disconnect();
+      return;
+    }
     applyEvent(msg);
     for (const h of handlers) h(msg);
   };
   sock.onclose = () => {
-    setState({ connected: false });
+    if (ping) {
+      clearInterval(ping);
+      ping = null;
+    }
+    setState({
+      connected: false,
+      connecting: false,
+      error: getToken() ? "Lost connection to BloodLink. Reconnecting…" : "",
+    });
     if (ws === sock) {
       retries += 1;
       const wait = Math.min(8000, 500 * retries);

@@ -1,8 +1,8 @@
-# Maintainer: Hearth contributors
+# Maintainer: BloodLink contributors
 pkgname=hearth-git
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="Open-source community communication for Linux and Windows"
+pkgdesc="BloodLink — open-source community communication for Linux and Windows"
 arch=('x86_64')
 url="https://github.com/IAmXMob69/hearth"
 license=('AGPL-3.0-or-later')

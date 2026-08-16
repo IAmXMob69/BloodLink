@@ -1,148 +1,89 @@
-# Hearth
+# BloodLink
 
-Open-source community communication for **Linux** and **Windows**. Servers, text channels, voice channels, DMs, friends, reactions, files — laid out like Discord, owned by you.
+Open-source Discord-style chat you host on **your own computer**. Friends download a small client, pick a username and password, and join. Not affiliated with Discord.
 
-Hearth is not affiliated with Discord. It is a from-scratch AGPL app you can run on a single Arch box, a LAN, or a VPS.
+See **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** first. Privacy details: **[PRIVACY.md](PRIVACY.md)**.
 
-![Hearth icon](assets/icon.png)
+![BloodLink icon](assets/icon.png)
+
+## How people use it
+
+| Role | What they run | What they do |
+| --- | --- | --- |
+| **Host** | This repo + `bloodlink-server` on one PC | Keep the PC on. Click **Invite People**. Send the secret link. |
+| **Friends** | Browser, `BloodLink-Connect.zip`, or phone home-screen | Open the link. Type username + password. Chat. |
+
+Friends never install the server. They never need the host’s Wi‑Fi.
 
 ## Features
 
-- **Servers** with categories, text channels, and voice channels
-- **Realtime chat** over WebSockets (edit, delete, reply, pin, search)
-- **Reactions**, typing indicators, unread-aware history
-- **Friends** and **direct messages**
-- **Voice** via WebRTC (mute, deafen, screen share)
-- **Invites** so people can join your community
-- **Self-hosted** SQLite backend — no cloud account
-- **Desktop app** (Electron) plus a browser client
-- **Instance URL** so one desktop app can join any Hearth server
+- Servers, categories, text channels, voice (relayed by the host — no peer IPs)
+- Realtime chat: edit, delete, reply, pin, search, reactions, uploads
+- Friends and sealed DMs (the host cannot read DM plaintext)
+- Invite People button → secret link (`g=` gate + invite)
+- Desktop (Electron / browser app window) and Android (PWA or `android/` Studio project)
+- No ads, no analytics, no Google fonts or STUN
 
-## Requirements
+## Host (this machine)
 
-- **Node.js 22.5+** (uses built-in `node:sqlite`)
-- Linux (tested on **Arch Linux + Xfce**) or Windows 10/11
-- A microphone if you want voice
-
-### Arch Linux
+On Arch Linux with the services already enabled:
 
 ```bash
-sudo pacman -S nodejs npm git
+systemctl --user status bloodlink-server bloodlink-tunnel
+# app on this PC:
+xdg-open http://127.0.0.1:3928
 ```
 
-Optional, for the packaged desktop app later:
+From a clean tree:
 
 ```bash
-sudo pacman -S electron
-```
-
-### Windows
-
-Install Node.js LTS (22+) from [nodejs.org](https://nodejs.org/), then use the same `npm` commands in PowerShell or Git Bash.
-
-## Quick start
-
-```bash
-git clone https://github.com/IAmXMob69/hearth.git
-cd hearth
+sudo pacman -S nodejs npm
+cd ~/Projects/BloodLink
 npm install
-npm run dev
-```
-
-Then open **http://127.0.0.1:5173** in Firefox or Chromium.
-
-- Register an account. The first account gets a starter server and an invite code.
-- Create a second account (private window) and join with that invite to see live chat.
-- Your tag looks like `blaine#4821` — that is how friends add you.
-
-### Desktop window (this machine)
-
-With the dev server already running:
-
-```bash
-npm run desktop:dev
-```
-
-Or build the UI and open the Electron shell against the production server:
-
-```bash
-npm run desktop
-```
-
-### Production (one process)
-
-```bash
 npm run build
-npm run server
+# then enable the systemd user units if you use them
 ```
 
-The server serves the API, WebSocket endpoint, uploads, and the built client on **http://0.0.0.0:3928**.
+Data lives in `~/.local/share/bloodlink/` (database, uploads, gate, tunnel URL).
 
-On Xfce you can bookmark that URL, or create a launcher:
+**Invite:** open a server → orange **Invite People** → Copy link.
 
+The public URL is a **free Cloudflare quick tunnel**. It can change after a reboot. Copy a fresh link if old ones die. The host PC must be awake.
+
+## Friends
+
+Do **not** run `install-linux.sh` / `install-windows.bat` unless you want a *new* empty community.
+
+1. Open the secret link or unzip `BloodLink-Connect.zip`
+2. `BloodLink.bat` (Windows) or `./BloodLink.sh` (Linux)
+3. Username + password → Continue
+
+## Developers
+
+```bash
+npm install
+npm run dev          # API :3928 + Vite :5173
+npm run desktop:dev  # Electron against Vite
 ```
-Name: Hearth
-Command: firefox --new-window http://127.0.0.1:3928
-Icon: /path/to/hearth/assets/icon.png
-```
-
-## Join from another computer
-
-1. On the host, note its LAN IP (`ip a`).
-2. Open port `3928` on the firewall if you use one (`sudo ufw allow 3928/tcp` or your nftables equivalent).
-3. On the other machine, open `http://HOST_IP:3928` or, in the Hearth login screen, click **Use a different instance** and paste that URL.
-
-Put Caddy or nginx with TLS in front before you expose this to the public internet.
-
-## Environment
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `HEARTH_PORT` | `3928` | HTTP + WebSocket port |
+| `HEARTH_PORT` / `PORT` | `3928` | Listen port |
 | `HEARTH_HOST` | `0.0.0.0` | Bind address |
-| `HEARTH_DATA` | `server/data` | SQLite + uploads |
-| `HEARTH_CLIENT` | `client/dist` | Built UI to serve |
-| `HEARTH_SOURCE` | GitHub URL | AGPL source link |
-
-Database file: `server/data/hearth.db`.
-
-## Packaging
-
-```bash
-npm run pack:linux    # AppImage under desktop/release
-npm run pack:win      # NSIS installer + portable exe (run on Windows)
-```
-
-A sample Xfce/FreeDesktop file is in `assets/hearth.desktop`.
-
-## Project layout
+| `HEARTH_DATA` | `server/data` or `~/.local/share/bloodlink` | SQLite + gate + uploads |
+| `HEARTH_CLIENT` | `client/dist` | Built UI |
+| `HEARTH_OPEN_SIGNUP` | unset (invite-only after first user) | Set `1` to allow open registration |
+| `HEARTH_SESSION_DAYS` | `7` | Session lifetime |
+| `HEARTH_GATE` | file `…/gate` | Secret for public access |
 
 ```
-hearth/
-  server/     Node HTTP + WebSocket + SQLite
-  client/     React UI (Discord-like layout)
-  desktop/    Electron wrapper
-  assets/     icon and .desktop file
+server/    Node HTTP + WebSocket + SQLite
+client/    React UI
+desktop/   Electron (host window, or --connect=URL for friends)
+android/   Android Studio WebView client
+scripts/   tunnel, Connect zip, desktop launcher
 ```
 
 ## License
 
-[GNU Affero General Public License v3.0 or later](LICENSE).
-
-If you run a modified Hearth server that people can log into, AGPL requires you to offer them the source of that modified version. The in-app **User Settings → Advanced** page links to the source.
-
-## Publish the source (GitHub)
-
-The project is already a git repo. To put it on GitHub as a public repository:
-
-```bash
-# in a browser: github.com/new  → name it hearth → Public
-cd ~/Projects/hearth
-git remote add origin git@github.com:IAmXMob69/hearth.git
-git branch -M main
-git push -u origin main
-```
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Design principle: stay familiar to Discord users, stay independent of Discord's brand, stay self-hostable.
+[GNU Affero GPL v3 or later](LICENSE). A running modified server must offer its source (**User Settings → Advanced**).

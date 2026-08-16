@@ -1,4 +1,10 @@
 node_modules/
+share/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties/
+android/.idea/
 dist/
 release/
 *.log

@@ -18,7 +18,7 @@ export function tag() {
 export function inviteCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   let out = "";
-  const bytes = randomBytes(8);
+  const bytes = randomBytes(16);
   for (const b of bytes) out += alphabet[b % alphabet.length];
   return out;
 }
@@ -43,8 +43,24 @@ export function now() {
   return Date.now();
 }
 
-export function publicUser(user, { includeEmail = false } = {}) {
+export function privacyOf(user) {
+  let p = {};
+  try {
+    p = JSON.parse(user?.privacy_json || "{}") || {};
+  } catch {
+    p = {};
+  }
+  return {
+    presence: p.presence !== false,
+    typing: p.typing === true,
+    dms: p.dms === "anyone" || p.dms === "nobody" ? p.dms : "friends",
+    vanish_hours: Math.max(0, Number(p.vanish_hours) || 0),
+  };
+}
+
+export function publicUser(user, { includeEmail = false, includePrivacy = false } = {}) {
   if (!user) return null;
+  const priv = privacyOf(user);
   const out = {
     id: user.id,
     username: user.username,
@@ -57,8 +73,10 @@ export function publicUser(user, { includeEmail = false } = {}) {
     status: user.status,
     custom_status: user.custom_status,
     created_at: user.created_at,
+    pubkey: user.pubkey || null,
   };
   if (includeEmail) out.email = user.email;
+  if (includePrivacy) out.privacy = priv;
   return out;
 }
 
@@ -85,8 +103,11 @@ export function validUsername(name) {
   return typeof name === "string" && /^[a-zA-Z0-9_]{2,32}$/.test(name);
 }
 
-export function validPassword(pw) {
-  return typeof pw === "string" && pw.length >= 8 && pw.length <= 128;
+export function validPassword(pw, username = "") {
+  if (typeof pw !== "string" || pw.length < 10 || pw.length > 128) return false;
+  if (username && pw.toLowerCase().includes(String(username).toLowerCase())) return false;
+  if (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) return false;
+  return true;
 }
 
 export function clampText(s, max) {

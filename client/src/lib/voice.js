@@ -1,186 +1,166 @@
+/** Voice through the BloodLink server only. No WebRTC — peers never learn each other's IPs. */
 import { sendWs } from "./socket.js";
 import { getState, setState } from "./store.js";
 
-const peers = new Map();
 let localStream = null;
-let screenStream = null;
-const remoteAudio = new Map();
 let myChannel = null;
 let muted = false;
 let deafened = false;
-let streaming = false;
+let ctx = null;
+let processor = null;
+let sourceNode = null;
+let outGain = null;
+const playQueues = new Map();
 
-const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+function b64FromI16(arr) {
+  const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+
+function i16FromB64(b64) {
+  const s = atob(b64);
+  const bytes = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+  return new Int16Array(bytes.buffer);
+}
 
 export function voiceStatus() {
-  return { channelId: myChannel, muted, deafened, streaming };
+  return { channelId: myChannel, muted, deafened, streaming: false };
 }
 
 async function ensureMic() {
   if (localStream) return localStream;
+  const mic = localStorage.getItem("hearth.mic") || "";
   localStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
+      ...(mic ? { deviceId: { exact: mic } } : {}),
+    },
     video: false,
-  });
-  localStream.getAudioTracks().forEach((t) => {
-    t.enabled = !muted && !deafened;
   });
   return localStream;
 }
 
-function attachRemote(id, stream) {
-  let el = remoteAudio.get(id);
-  if (!el) {
-    el = document.createElement("audio");
-    el.autoplay = true;
-    el.playsInline = true;
-    document.body.appendChild(el);
-    remoteAudio.set(id, el);
-  }
-  el.srcObject = stream;
-  el.muted = deafened;
-  el.play().catch(() => {});
+function ensureCtx() {
+  if (ctx) return ctx;
+  ctx = new AudioContext();
+  outGain = ctx.createGain();
+  outGain.gain.value = 1;
+  outGain.connect(ctx.destination);
+  return ctx;
 }
 
-function cleanupPeer(id) {
-  const pc = peers.get(id);
-  if (pc) {
-    pc.onicecandidate = null;
-    pc.ontrack = null;
-    pc.close();
-    peers.delete(id);
-  }
-  const el = remoteAudio.get(id);
-  if (el) {
-    el.srcObject = null;
-    el.remove();
-    remoteAudio.delete(id);
-  }
-}
-
-async function makePeer(remoteId, initiator) {
-  if (peers.has(remoteId)) return peers.get(remoteId);
-  const pc = new RTCPeerConnection(ICE);
-  peers.set(remoteId, pc);
-  const stream = await ensureMic();
-  for (const track of stream.getTracks()) pc.addTrack(track, stream);
-  if (screenStream) {
-    for (const track of screenStream.getTracks()) pc.addTrack(track, screenStream);
-  }
-  pc.onicecandidate = (e) => {
-    if (e.candidate) sendWs({ type: "rtc", to: remoteId, data: { kind: "ice", candidate: e.candidate } });
-  };
-  pc.ontrack = (e) => {
-    const [stream] = e.streams;
-    if (stream) attachRemote(remoteId, stream);
-  };
-  if (initiator) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    sendWs({ type: "rtc", to: remoteId, data: { kind: "offer", sdp: pc.localDescription } });
-  }
-  return pc;
-}
-
-export async function handleRtc(msg) {
-  if (msg.type !== "rtc" || !myChannel) return;
-  const from = msg.from;
-  const data = msg.data || {};
-  try {
-    if (data.kind === "offer") {
-      const pc = await makePeer(from, false);
-      await pc.setRemoteDescription(data.sdp);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      sendWs({ type: "rtc", to: from, data: { kind: "answer", sdp: pc.localDescription } });
-    } else if (data.kind === "answer") {
-      const pc = peers.get(from) || (await makePeer(from, false));
-      await pc.setRemoteDescription(data.sdp);
-    } else if (data.kind === "ice") {
-      const pc = peers.get(from);
-      if (pc && data.candidate) await pc.addIceCandidate(data.candidate);
+function startCapture() {
+  const ac = ensureCtx();
+  if (processor) return;
+  sourceNode = ac.createMediaStreamSource(localStream);
+  processor = ac.createScriptProcessor(1024, 1, 1);
+  const muteGain = ac.createGain();
+  muteGain.gain.value = 0;
+  processor.onaudioprocess = (e) => {
+    if (!myChannel || muted || deafened) return;
+    const input = e.inputBuffer.getChannelData(0);
+    const pcm = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i]));
+      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
     }
-  } catch (err) {
-    console.warn("rtc", err);
+    sendWs({ type: "voice.frame", data: b64FromI16(pcm), rate: e.inputBuffer.sampleRate });
+  };
+  sourceNode.connect(processor);
+  processor.connect(muteGain);
+  muteGain.connect(ac.destination);
+}
+
+function stopCapture() {
+  if (processor) {
+    processor.disconnect();
+    processor.onaudioprocess = null;
+    processor = null;
   }
+  if (sourceNode) {
+    sourceNode.disconnect();
+    sourceNode = null;
+  }
+}
+
+function playFrame(from, b64, rate) {
+  if (deafened) return;
+  const ac = ensureCtx();
+  const pcm = i16FromB64(b64);
+  if (!pcm.length) return;
+  const sr = rate || 48000;
+  const f32 = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) f32[i] = pcm[i] / 0x8000;
+  const buf = ac.createBuffer(1, f32.length, sr);
+  buf.getChannelData(0).set(f32);
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  src.connect(outGain);
+  const nowt = ac.currentTime;
+  const q = playQueues.get(from) || nowt;
+  const start = Math.max(nowt, q);
+  src.start(start);
+  playQueues.set(from, start + buf.duration);
+}
+
+export function handleVoiceFrame(msg) {
+  if (!myChannel || msg.type !== "voice.frame" || !msg.data) return;
+  if (msg.from === getState().me?.id) return;
+  playFrame(msg.from, msg.data, msg.rate);
+}
+
+export async function handleRtc() {
+  /* P2P disabled — IPs are never exchanged. */
 }
 
 export async function joinVoice(channelId) {
   await ensureMic();
+  await ensureCtx().resume();
   myChannel = channelId;
   muted = false;
   deafened = false;
-  sendWs({ type: "voice.join", channel_id: channelId, muted, deafened, streaming });
-  setState({ voiceMe: { channelId, muted, deafened, streaming } });
+  startCapture();
+  sendWs({ type: "voice.join", channel_id: channelId, muted, deafened, streaming: false });
+  setState({ voiceMe: { channelId, muted, deafened, streaming: false } });
 }
 
-export function onVoiceJoin(msg, meId) {
-  if (!myChannel || msg.channel_id !== myChannel) return;
-  if (msg.user_id === meId) {
-    const peersIds = msg.peers || [];
-    for (const pid of peersIds) makePeer(pid, true);
-    return;
-  }
-  makePeer(msg.user_id, true);
+export function onVoiceJoin() {
+  /* no peer connections */
 }
 
 export function leaveVoice() {
   if (myChannel) sendWs({ type: "voice.leave" });
-  for (const id of [...peers.keys()]) cleanupPeer(id);
+  stopCapture();
   if (localStream) {
     localStream.getTracks().forEach((t) => t.stop());
     localStream = null;
   }
-  if (screenStream) {
-    screenStream.getTracks().forEach((t) => t.stop());
-    screenStream = null;
-  }
   myChannel = null;
-  streaming = false;
+  playQueues.clear();
   setState({ voiceMe: null });
 }
 
 export function setMuted(next) {
   muted = next;
-  if (localStream) localStream.getAudioTracks().forEach((t) => (t.enabled = !muted && !deafened));
-  sendWs({ type: "voice.state", muted, deafened, streaming });
+  sendWs({ type: "voice.state", muted, deafened, streaming: false });
   const s = getState();
-  setState({ voiceMe: s.voiceMe ? { ...s.voiceMe, muted, deafened, streaming } : s.voiceMe });
+  setState({ voiceMe: s.voiceMe ? { ...s.voiceMe, muted, deafened, streaming: false } : s.voiceMe });
 }
 
 export function setDeafened(next) {
   deafened = next;
   if (deafened) muted = true;
-  if (localStream) localStream.getAudioTracks().forEach((t) => (t.enabled = !muted && !deafened));
-  for (const el of remoteAudio.values()) el.muted = deafened;
-  sendWs({ type: "voice.state", muted, deafened, streaming });
+  sendWs({ type: "voice.state", muted, deafened, streaming: false });
   const s = getState();
-  setState({ voiceMe: s.voiceMe ? { ...s.voiceMe, muted, deafened, streaming } : s.voiceMe });
+  setState({ voiceMe: s.voiceMe ? { ...s.voiceMe, muted, deafened, streaming: false } : s.voiceMe });
 }
 
 export async function toggleScreen() {
-  if (streaming && screenStream) {
-    screenStream.getTracks().forEach((t) => t.stop());
-    screenStream = null;
-    streaming = false;
-    sendWs({ type: "voice.state", muted, deafened, streaming });
-    const s = getState();
-    setState({ voiceMe: s.voiceMe ? { ...s.voiceMe, streaming } : s.voiceMe });
-    return;
-  }
-  screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  streaming = true;
-  for (const pc of peers.values()) {
-    for (const track of screenStream.getTracks()) pc.addTrack(track, screenStream);
-  }
-  screenStream.getVideoTracks()[0].addEventListener("ended", () => {
-    streaming = false;
-    screenStream = null;
-    sendWs({ type: "voice.state", muted, deafened, streaming: false });
-    const s = getState();
-    setState({ voiceMe: s.voiceMe ? { ...s.voiceMe, streaming: false } : s.voiceMe });
-  });
-  sendWs({ type: "voice.state", muted, deafened, streaming });
-  const s = getState();
-  setState({ voiceMe: s.voiceMe ? { ...s.voiceMe, streaming } : s.voiceMe });
+  throw new Error("Screen share is off so your IP is never sent to other people.");
 }
