@@ -43,7 +43,7 @@ Install Node.js LTS (22+) from [nodejs.org](https://nodejs.org/), then use the s
 ## Quick start
 
 ```bash
-git clone https://github.com/hearth-chat/hearth.git
+git clone https://github.com/IAmXMob69/hearth.git
 cd hearth
 npm install
 npm run dev
@@ -130,6 +130,18 @@ hearth/
 [GNU Affero General Public License v3.0 or later](LICENSE).
 
 If you run a modified Hearth server that people can log into, AGPL requires you to offer them the source of that modified version. The in-app **User Settings → Advanced** page links to the source.
+
+## Publish the source (GitHub)
+
+The project is already a git repo. To put it on GitHub as a public repository:
+
+```bash
+# in a browser: github.com/new  → name it hearth → Public
+cd ~/Projects/hearth
+git remote add origin git@github.com:IAmXMob69/hearth.git
+git branch -M main
+git push -u origin main
+```
 
 ## Contributing
 

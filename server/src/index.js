@@ -22,7 +22,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.HEARTH_PORT || 3928);
 const HOST = process.env.HEARTH_HOST || "0.0.0.0";
-const SOURCE_URL = process.env.HEARTH_SOURCE || "https://github.com/hearth-chat/hearth";
+const SOURCE_URL = process.env.HEARTH_SOURCE || "https://github.com/IAmXMob69/hearth";
 
 const CLIENT_CANDIDATES = [
   process.env.HEARTH_CLIENT,

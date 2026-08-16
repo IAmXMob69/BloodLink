@@ -4,13 +4,13 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="Open-source community communication for Linux and Windows"
 arch=('x86_64')
-url="https://github.com/hearth-chat/hearth"
+url="https://github.com/IAmXMob69/hearth"
 license=('AGPL-3.0-or-later')
 depends=('nodejs')
 makedepends=('npm' 'git')
 provides=('hearth')
 conflicts=('hearth')
-source=("git+https://github.com/hearth-chat/hearth.git")
+source=("git+https://github.com/IAmXMob69/hearth.git")
 sha256sums=('SKIP')
 
 pkgver() {
