@@ -31,15 +31,17 @@ package() {
   # drop bulky electron downloads from a source install; users run via node
   rm -rf "$pkgdir/usr/lib/hearth/desktop/node_modules" || true
 
-  install -Dm755 /dev/stdin "$pkgdir/usr/bin/hearth-server" <<'EOF'
-#!/bin/sh
-export HEARTH_CLIENT="${HEARTH_CLIENT:-/usr/lib/hearth/dist}"
-if [ -d /usr/lib/hearth/client ]; then
-  export HEARTH_CLIENT=/usr/lib/hearth/client
-fi
-export HEARTH_DATA="${HEARTH_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/hearth}"
-exec node /usr/lib/hearth/server/src/index.js "$@"
-EOF
+  install -d "$pkgdir/usr/bin"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'export HEARTH_CLIENT="${HEARTH_CLIENT:-/usr/lib/hearth/dist}"' \
+    'if [ -d /usr/lib/hearth/client ]; then' \
+    '  export HEARTH_CLIENT=/usr/lib/hearth/client' \
+    'fi' \
+    'export HEARTH_DATA="${HEARTH_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/hearth}"' \
+    'exec node /usr/lib/hearth/server/src/index.js "$@"' \
+    > "$pkgdir/usr/bin/hearth-server"
+  chmod 755 "$pkgdir/usr/bin/hearth-server"
 
   install -Dm644 assets/hearth.desktop "$pkgdir/usr/share/applications/hearth.desktop"
   install -Dm644 assets/icon.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/hearth.png"
