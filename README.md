@@ -38,7 +38,7 @@ From a clean tree:
 
 ```bash
 sudo pacman -S nodejs npm
-cd ~/Projects/BloodLink
+cd BloodLink
 npm install
 npm run build
 # then enable the systemd user units if you use them

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import subprocess
 from collections import deque
 from pathlib import Path
@@ -14,7 +15,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 ROOT = Path(__file__).resolve().parents[1]
 ICON = ROOT / "assets" / "icon.png"
 SEED = ROOT / "server" / "seed-stickers"
-GEN = None  # optional rebuild dir: BLOODLINK_STICKER_SRC
+_src = os.environ.get("BLOODLINK_STICKER_SRC", "").strip()
+GEN = Path(_src) if _src else None
 SIZE = 512
 
 
@@ -477,16 +479,23 @@ def main():
     punch_dir.mkdir(parents=True, exist_ok=True)
     punch_items = []
     generated = [
-        ("thumbs", "👍", GEN / "5.jpg"),
-        ("heart", "❤️", GEN / "3.jpg"),
-        ("fire", "🔥", GEN / "4.jpg"),
-        ("cry", "😭", GEN / "8.jpg"),
-        ("clap", "👏", GEN / "7.jpg"),
-        ("skull", "💀", GEN / "6.jpg"),
+        ("thumbs", "👍", "5.jpg"),
+        ("heart", "❤️", "3.jpg"),
+        ("fire", "🔥", "4.jpg"),
+        ("cry", "😭", "8.jpg"),
+        ("clap", "👏", "7.jpg"),
+        ("skull", "💀", "6.jpg"),
     ]
-    for i, (stem, emoji, src) in enumerate(generated):
+    for i, (stem, emoji, name) in enumerate(generated):
         dest = punch_dir / f"{i+1:02d}-{stem}.png"
-        extract_generated(src).save(dest, "PNG")
+        src = (GEN / name) if GEN else None
+        if src and src.is_file():
+            extract_generated(src).save(dest, "PNG")
+        elif dest.is_file():
+            pass
+        else:
+            print(f"skip {stem}: set BLOODLINK_STICKER_SRC to rebuild from source images")
+            continue
         punch_items.append((stem, emoji, dest))
 
     start = len(punch_items)
