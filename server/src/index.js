@@ -28,6 +28,7 @@ import {
   ipKey,
   dummyVerify,
   isPublicHop,
+  corsAllows,
 } from "./harden.js";
 import {
   id,
@@ -43,7 +44,9 @@ import {
   validUsername,
   validPassword,
   clampText,
+  hashSessionToken,
 } from "./util.js";
+import { attachmentAllowed } from "./sniff.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || process.env.HEARTH_PORT || 3928);
@@ -85,6 +88,28 @@ function ensureHostZip() {
       return null;
     }
   }
+  return zip;
+}
+
+function ensureConnectZip(invite) {
+  const outDir = join(DATA_DIR, "connect-pack");
+  mkdirSync(outDir, { recursive: true });
+  const zip = join(outDir, "BloodLink-Connect.zip");
+  const metaFile = join(outDir, "meta");
+  const meta = `${invite}|${publicUrl()}|${GATE}`;
+  if (existsSync(zip) && existsSync(metaFile) && readFileSync(metaFile, "utf8") === meta) {
+    return zip;
+  }
+  const script = join(__dirname, "..", "..", "scripts", "make-connect.js");
+  const r = spawnSync(process.execPath, [script, invite, join(outDir, "BloodLink-Connect")], {
+    env: { ...process.env, HEARTH_DATA: DATA_DIR, HEARTH_PUBLIC_URL: publicUrl(), HEARTH_GATE: GATE },
+    encoding: "utf8",
+  });
+  if (r.status !== 0 || !existsSync(zip)) {
+    console.error("make-connect failed", r.status, r.stdout, r.stderr);
+    return null;
+  }
+  writeFileSync(metaFile, meta, { mode: 0o600 });
   return zip;
 }
 
@@ -510,13 +535,7 @@ function sendTimeout(req, res, user) {
 function cors(req, res) {
   const origin = req.headers.origin;
   if (!origin) return;
-  const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-  const pub = publicUrl();
-  const fromTunnel =
-    /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(origin) ||
-    /^https:\/\/[a-z0-9.-]+\.(localhost\.run|lhr\.life|serveo\.net)$/.test(origin) ||
-    (pub && origin.replace(/\/$/, "") === pub);
-  if (CORS_ALLOW.includes("*") || CORS_ALLOW.includes(origin) || local || fromTunnel) {
+  if (corsAllows(origin, { publicUrl: publicUrl(), extra: CORS_ALLOW })) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -525,18 +544,32 @@ function cors(req, res) {
   }
 }
 
-function auth(req) {
-  const h = req.headers.authorization || "";
-  const tok = h.startsWith("Bearer ") ? h.slice(7) : "";
+function userFromToken(tok) {
   if (!tok) return null;
-  const user = q.sessionUser.get(tok);
+  const key = hashSessionToken(tok);
+  const user = q.sessionUser.get(key);
   if (!user) return null;
-  const sess = db.prepare("SELECT created_at FROM sessions WHERE token = ?").get(tok);
+  const sess = db.prepare("SELECT created_at FROM sessions WHERE token = ?").get(key);
   if (sess && SESSION_MS > 0 && now() - sess.created_at > SESSION_MS) {
-    q.deleteSession.run(tok);
+    q.deleteSession.run(key);
     return null;
   }
   return user;
+}
+
+function storeSession(tok, userId, createdAt) {
+  q.insertSession.run(hashSessionToken(tok), userId, createdAt);
+}
+
+function dropSession(tok) {
+  if (!tok) return;
+  q.deleteSession.run(hashSessionToken(tok));
+}
+
+function auth(req) {
+  const h = req.headers.authorization || "";
+  const tok = h.startsWith("Bearer ") ? h.slice(7) : "";
+  return userFromToken(tok);
 }
 
 const routes = [];
@@ -606,7 +639,7 @@ route("POST", "/api/register", async (req, res, _p, body) => {
   q.insertUser.run(uid, username, t, email, hash, display, colorFor(username), colorFor(username + t), tnow);
   q.updatePrivacy.run(JSON.stringify({ presence: false, typing: false, dms: "friends", vanish_hours: 0 }), uid);
   const tok = token();
-  q.insertSession.run(tok, uid, tnow);
+  storeSession(tok, uid, tnow);
   const user = q.userById.get(uid);
   const inv = inviteCodeIn ? q.inviteByCode.get(inviteCodeIn) : null;
   let invite = null;
@@ -647,14 +680,14 @@ route("POST", "/api/login", async (req, res, _p, body) => {
     return json(res, 401, { error: "Invalid username or password." });
   }
   const tok = token();
-  q.insertSession.run(tok, user.id, now());
+  storeSession(tok, user.id, now());
   json(res, 200, { token: tok, user: publicUser(user, { includeEmail: true }) });
 }, { authRequired: false });
 
 route("POST", "/api/logout", async (req, res) => {
   const h = req.headers.authorization || "";
   const tok = h.startsWith("Bearer ") ? h.slice(7) : "";
-  if (tok) q.deleteSession.run(tok);
+  dropSession(tok);
   json(res, 200, { ok: true });
 });
 
@@ -1226,6 +1259,9 @@ route("POST", "/api/upload", async (req, res, _p, _b, user) => {
     const mb = Math.round(cap / (1024 * 1024));
     return json(res, 413, { error: `File too large (${mb} MB max).` });
   }
+  if (!attachmentAllowed(ext, raw)) {
+    return json(res, 400, { error: "File contents do not match the file type." });
+  }
   const fid = id() + ext;
   writeFileSync(join(UPLOAD_DIR, fid), raw);
   const url = `/uploads/${fid}`;
@@ -1297,15 +1333,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === "/download/Hearth-Connect.zip" || path === "/download/BloodLink-Connect.zip") {
+    if (!rateLimit(req, "zip", 2, 60 * 1000)) {
+      return json(res, 429, { error: "Too many downloads. Try later.", retry_after: rateLimit.retryAfter || 30 });
+    }
     const invite = url.searchParams.get("invite") || APP_INVITE || "";
-    const outDir = join(DATA_DIR, "connect-pack");
-    const script = join(__dirname, "..", "..", "scripts", "make-connect.js");
-    const r = spawnSync(process.execPath, [script, invite, join(outDir, "BloodLink-Connect")], {
-      env: { ...process.env, HEARTH_DATA: DATA_DIR, HEARTH_PUBLIC_URL: publicUrl(), HEARTH_GATE: GATE },
-      encoding: "utf8",
-    });
-    const zip = join(outDir, "BloodLink-Connect.zip");
-    if (r.status !== 0 || !existsSync(zip)) {
+    const zip = ensureConnectZip(invite);
+    if (!zip) {
       return json(res, 503, { error: "Could not build the Connect app. Is the public tunnel up?" });
     }
     securityHeaders(res);
@@ -1318,6 +1351,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === "/download/BloodLink-Host.zip" || path === "/download/Hearth-Host.zip") {
+    if (!rateLimit(req, "zip", 2, 60 * 1000)) {
+      return json(res, 429, { error: "Too many downloads. Try later.", retry_after: rateLimit.retryAfter || 30 });
+    }
     const zip = ensureHostZip();
     if (!zip) {
       return json(res, 503, { error: "Could not build the host pack. Try again in a moment." });
@@ -1461,14 +1497,8 @@ wss.on("connection", (ws) => {
       }
       if (msg.type === "auth") {
         const tok = msg.token || "";
-        const u = q.sessionUser.get(tok);
+        const u = userFromToken(tok);
         if (!u) {
-          send(ws, { type: "error", error: "Invalid token." });
-          return;
-        }
-        const sess = db.prepare("SELECT created_at FROM sessions WHERE token = ?").get(tok);
-        if (sess && SESSION_MS > 0 && now() - sess.created_at > SESSION_MS) {
-          q.deleteSession.run(tok);
           send(ws, { type: "error", error: "Invalid token." });
           return;
         }

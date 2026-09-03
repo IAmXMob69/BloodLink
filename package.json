@@ -29,7 +29,8 @@
     "desktop": "npm run build && npm run start -w @hearth/desktop",
     "desktop:dev": "node scripts/dev.js --electron",
     "pack:linux": "npm run build && npm run pack:linux -w @hearth/desktop",
-    "pack:win": "npm run build && npm run pack:win -w @hearth/desktop"
+    "pack:win": "npm run build && npm run pack:win -w @hearth/desktop",
+    "test": "node --test server/test/*.test.js"
   },
   "engines": {
     "node": ">=22.5.0"

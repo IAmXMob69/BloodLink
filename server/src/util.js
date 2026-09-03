@@ -1,4 +1,4 @@
-import { randomBytes, randomInt, scrypt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 
 const scryptAsync = promisify(scrypt);
@@ -9,6 +9,11 @@ export function id() {
 
 export function token() {
   return randomBytes(32).toString("hex");
+}
+
+/** SHA-256 hex with a prefix so plaintext rows can be migrated once. */
+export function hashSessionToken(tok) {
+  return "sha256:" + createHash("sha256").update(String(tok), "utf8").digest("hex");
 }
 
 export function tag() {

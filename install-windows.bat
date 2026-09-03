@@ -45,8 +45,9 @@ set HEARTH_PORT=3928
 set HEARTH_HOST=127.0.0.1
 echo.
 echo Starting BloodLink on http://127.0.0.1:3928
-echo Leave this window open. Friends on the same Wi-Fi can join at:
-echo   http://YOUR-PC-IP:3928
+echo Leave this window open. The server binds localhost only.
+echo Friends join through the Connect app or the Cloudflare tunnel,
+echo not a LAN IP.
 echo.
 start "" http://127.0.0.1:3928
 node server\src\index.js
