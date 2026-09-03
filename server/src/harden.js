@@ -59,15 +59,28 @@ export function loadGate(dataDir) {
   return g;
 }
 
-export function clientIp(req) {
-  const cf = req.headers["cf-connecting-ip"];
-  if (cf && typeof cf === "string") return cf.split(",")[0].trim();
-  const xff = req.headers["x-forwarded-for"];
-  if (xff && typeof xff === "string") return xff.split(",")[0].trim();
+function socketIp(req) {
   return (req.socket?.remoteAddress || "").replace("::ffff:", "");
 }
 
+function isTrustedProxyHop(req) {
+  // Only honor forwarding headers from the local tunnel (cloudflared / ssh -R).
+  const ip = socketIp(req);
+  return ip === "127.0.0.1" || ip === "::1" || ip === "localhost";
+}
+
+export function clientIp(req) {
+  if (isTrustedProxyHop(req)) {
+    const cf = req.headers["cf-connecting-ip"];
+    if (cf && typeof cf === "string") return cf.split(",")[0].trim();
+    const xff = req.headers["x-forwarded-for"];
+    if (xff && typeof xff === "string") return xff.split(",")[0].trim();
+  }
+  return socketIp(req);
+}
+
 export function isPublicHop(req) {
+  if (!isTrustedProxyHop(req)) return false;
   return Boolean(
     req.headers["cf-ray"] ||
       req.headers["cf-connecting-ip"] ||
