@@ -31,15 +31,10 @@ ensure_cloudflared() {
   local dest="${CLOUDFLARED:-$HOME/.local/bin/cloudflared}"
   if [[ -x "$dest" ]]; then echo "$dest"; return; fi
   if command -v cloudflared >/dev/null; then command -v cloudflared; return; fi
-  mkdir -p "$(dirname "$dest")"
-  echo "downloading cloudflared…" >>"$LOG"
-  if curl -fL --retry 4 --retry-delay 2 --max-time 180 \
-      -o "$dest.new" \
-      "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"; then
-    chmod +x "$dest.new"
-    mv "$dest.new" "$dest"
-    echo "$dest"
-  fi
+  echo "cloudflared missing at $dest" >>"$LOG"
+  echo "Install it yourself (do not curl an unsigned 'latest' binary):" >>"$LOG"
+  echo "  pacman -S cloudflared   # or verify a GitHub release checksum, then copy to $dest" >>"$LOG"
+  return 1
 }
 
 CF="$(ensure_cloudflared || true)"

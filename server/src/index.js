@@ -47,7 +47,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || process.env.HEARTH_PORT || 3928);
-const HOST = process.env.HEARTH_HOST || "0.0.0.0";
+const HOST = process.env.HEARTH_HOST || "127.0.0.1";
 const SOURCE_URL = process.env.HEARTH_SOURCE || "https://github.com/IAmXMob69/BloodLink";
 const OPEN_SIGNUP = process.env.HEARTH_OPEN_SIGNUP === "1";
 const SESSION_MS = Number(process.env.HEARTH_SESSION_DAYS || 7) * 86400000;
