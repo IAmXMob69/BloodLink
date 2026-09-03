@@ -69,7 +69,7 @@ npm run desktop:dev  # Electron against Vite
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `HEARTH_PORT` / `PORT` | `3928` | Listen port |
-| `HEARTH_HOST` | `0.0.0.0` | Bind address |
+| `HEARTH_HOST` | `127.0.0.1` | Bind address (localhost; use the tunnel for friends) |
 | `HEARTH_DATA` | `server/data` or `~/.local/share/bloodlink` | SQLite + gate + uploads |
 | `HEARTH_CLIENT` | `client/dist` | Built UI |
 | `HEARTH_OPEN_SIGNUP` | unset (invite-only after first user) | Set `1` to allow open registration |

@@ -27,7 +27,7 @@ if (-not (Test-Path "client\dist\index.html")) {
 }
 
 $env:HEARTH_PORT = "3928"
-$env:HEARTH_HOST = "0.0.0.0"
+$env:HEARTH_HOST = "127.0.0.1"
 Write-Host ""
 Write-Host "Starting BloodLink on http://127.0.0.1:3928"
 Write-Host "Leave this window open."

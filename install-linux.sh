@@ -27,7 +27,7 @@ if [[ ! -f client/dist/index.html ]]; then
 fi
 
 export HEARTH_PORT="${HEARTH_PORT:-3928}"
-export HEARTH_HOST="${HEARTH_HOST:-0.0.0.0}"
+export HEARTH_HOST="${HEARTH_HOST:-127.0.0.1}"
 echo
 echo "Starting BloodLink on http://127.0.0.1:${HEARTH_PORT}"
 if command -v xdg-open >/dev/null; then

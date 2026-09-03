@@ -44,14 +44,6 @@ if [[ -n "${CF:-}" && -x "$CF" ]]; then
   exit "${PIPESTATUS[0]}"
 fi
 
-echo "cloudflared missing — trying SSH tunnels" | tee -a "$LOG"
-echo "trying localhost.run" | tee -a "$LOG"
-ssh -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
-    -o StrictHostKeyChecking=accept-new \
-    -R 80:127.0.0.1:"${HEARTH_PORT:-3928}" \
-    nokey@localhost.run 2>&1 | watch_line
-echo "trying serveo.net" | tee -a "$LOG"
-ssh -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \
-    -o StrictHostKeyChecking=accept-new \
-    -R 80:127.0.0.1:"${HEARTH_PORT:-3928}" \
-    serveo.net 2>&1 | watch_line
+echo "cloudflared missing — not opening an unauthenticated SSH tunnel" | tee -a "$LOG"
+echo "Install cloudflared (verify the checksum) and retry." | tee -a "$LOG"
+exit 1
