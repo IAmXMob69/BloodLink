@@ -94,6 +94,17 @@ export function isLoopback(req) {
   return ip === "127.0.0.1" || ip === "::1" || ip === "localhost";
 }
 
+/** Exact origin match: localhost, the live tunnel URL, or HEARTH_CORS extras. */
+export function corsAllows(origin, { publicUrl = "", extra = [] } = {}) {
+  if (!origin || typeof origin !== "string") return false;
+  const list = Array.isArray(extra) ? extra : [];
+  if (list.includes("*") || list.includes(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  const pub = String(publicUrl || "").replace(/\/$/, "");
+  if (pub && origin.replace(/\/$/, "") === pub) return true;
+  return false;
+}
+
 export function gateRequired(req) {
   if (process.env.HEARTH_GATE === "0") return false;
   if (isPublicHop(req)) return true;

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { hashSessionToken } from "./util.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.HEARTH_DATA || join(__dirname, "..", "data");
@@ -273,6 +274,28 @@ export const q = {
   ),
   userReads: db.prepare("SELECT channel_id, last_read FROM reads WHERE user_id = ?"),
 };
+
+function migrateSessionTokens() {
+  const rows = db.prepare("SELECT token, user_id, created_at FROM sessions").all();
+  const pending = rows.filter((r) => !String(r.token).startsWith("sha256:"));
+  if (!pending.length) return;
+  const del = db.prepare("DELETE FROM sessions WHERE token = ?");
+  const ins = db.prepare(
+    "INSERT OR IGNORE INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)"
+  );
+  db.exec("BEGIN");
+  try {
+    for (const row of pending) {
+      del.run(row.token);
+      ins.run(hashSessionToken(row.token), row.user_id, row.created_at);
+    }
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+migrateSessionTokens();
 
 export function reactionsMap(messageIds) {
   const map = {};
