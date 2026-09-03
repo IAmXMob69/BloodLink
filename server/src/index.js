@@ -205,6 +205,16 @@ function emitChannel(channelId, payload, except) {
   }
 }
 
+function emitVoice(channelId, payload, except) {
+  // PCM must not fan out to the whole server — only people in this voice channel.
+  for (const [uid, st] of voice) {
+    if (st.channel_id !== channelId) continue;
+    if (except && uid === except) continue;
+    if (st.deafened) continue;
+    emitUser(uid, payload);
+  }
+}
+
 function isOnline(userId) {
   return online.has(userId);
 }
@@ -869,6 +879,8 @@ route("POST", "/api/channels/:id/messages", async (req, res, p, body, user) => {
 route("PATCH", "/api/messages/:id", async (req, res, p, body, user) => {
   const row = q.messageById.get(p.id);
   if (!row) return json(res, 404, { error: "Message not found." });
+  const editCh = q.channelById.get(row.channel_id);
+  if (!editCh || !canSeeChannel(user.id, editCh)) return json(res, 404, { error: "Not found." });
   if (row.author_id !== user.id) return json(res, 403, { error: "You can only edit your own messages." });
   const content = clampText(body.content || "", 4000);
   q.updateMessage.run(content, now(), row.id);
@@ -903,6 +915,8 @@ route("PUT", "/api/messages/:id/pin", async (req, res, p, _b, user) => {
 route("DELETE", "/api/messages/:id/pin", async (req, res, p, _b, user) => {
   const row = q.messageById.get(p.id);
   if (!row) return json(res, 404, { error: "Message not found." });
+  const pinCh = q.channelById.get(row.channel_id);
+  if (!pinCh || !canSeeChannel(user.id, pinCh)) return json(res, 404, { error: "Not found." });
   q.pinMessage.run(0, row.id);
   const next = serializeMessage(q.messageById.get(row.id), reactionsMap([row.id])[row.id] || []);
   emitChannel(row.channel_id, { type: "message.update", message: next });
@@ -912,6 +926,8 @@ route("DELETE", "/api/messages/:id/pin", async (req, res, p, _b, user) => {
 route("PUT", "/api/messages/:id/reactions/:emoji", async (req, res, p, _b, user) => {
   const row = q.messageById.get(p.id);
   if (!row) return json(res, 404, { error: "Message not found." });
+  const reactCh = q.channelById.get(row.channel_id);
+  if (!reactCh || !canSeeChannel(user.id, reactCh)) return json(res, 404, { error: "Not found." });
   const emoji = decodeURIComponent(p.emoji).slice(0, 16);
   q.addReaction.run(row.id, user.id, emoji);
   const reactions = reactionsMap([row.id])[row.id] || [];
@@ -922,6 +938,8 @@ route("PUT", "/api/messages/:id/reactions/:emoji", async (req, res, p, _b, user)
 route("DELETE", "/api/messages/:id/reactions/:emoji", async (req, res, p, _b, user) => {
   const row = q.messageById.get(p.id);
   if (!row) return json(res, 404, { error: "Message not found." });
+  const reactCh = q.channelById.get(row.channel_id);
+  if (!reactCh || !canSeeChannel(user.id, reactCh)) return json(res, 404, { error: "Not found." });
   const emoji = decodeURIComponent(p.emoji).slice(0, 16);
   q.removeReaction.run(row.id, user.id, emoji);
   const reactions = reactionsMap([row.id])[row.id] || [];
@@ -1048,6 +1066,8 @@ route("POST", "/api/dms", async (req, res, _p, body, user) => {
 
 route("POST", "/api/read", async (req, res, _p, body, user) => {
   if (!body.channel_id) return json(res, 400, { error: "channel_id required." });
+  const ch = q.channelById.get(body.channel_id);
+  if (!ch || !canSeeChannel(user.id, ch)) return json(res, 404, { error: "Not found." });
   q.setRead.run(user.id, body.channel_id, body.last_read || "");
   json(res, 200, { ok: true });
 });
@@ -1342,7 +1362,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 404, { error: "Not found." });
     } catch (err) {
       console.error(err);
-      return json(res, err.status || 500, { error: err.message || "Server error." });
+      return json(res, 500, { error: "Server error." });
     }
   }
 
@@ -1371,6 +1391,8 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocketServer({
   server,
   path: "/ws",
+  maxPayload: 64 * 1024,
+  perMessageDeflate: false,
   verifyClient(info, done) {
     const req = info.req;
     const u = new URL(req.url, "http://local");
@@ -1417,6 +1439,11 @@ function detach(ws) {
 
 wss.on("connection", (ws) => {
   // Token is sent in the first auth frame — never in the URL (access logs).
+  const authTimer = setTimeout(() => {
+    if (!sockets.has(ws)) {
+      try { ws.close(); } catch { /* ignore */ }
+    }
+  }, 10_000);
 
   ws.on("message", (buf) => {
     let msg;
@@ -1425,6 +1452,7 @@ wss.on("connection", (ws) => {
     } catch {
       return;
     }
+    try {
     const meta = sockets.get(ws);
     if (!meta) {
       if (msg.type === "ping") {
@@ -1445,6 +1473,7 @@ wss.on("connection", (ws) => {
           return;
         }
         attach(ws, u);
+        clearTimeout(authTimer);
       }
       return;
     }
@@ -1515,12 +1544,21 @@ wss.on("connection", (ws) => {
       const raw = typeof msg.data === "string" ? msg.data : "";
       if (!raw || raw.length > 32000) return;
       const rate = Number(msg.rate) || 48000;
-      emitChannel(st.channel_id, { type: "voice.frame", from: me.id, data: raw, rate }, me.id);
+      emitVoice(st.channel_id, { type: "voice.frame", from: me.id, data: raw, rate }, me.id);
+    }
+    } catch (err) {
+      console.error("ws message", err);
     }
   });
 
-  ws.on("close", () => detach(ws));
-  ws.on("error", () => detach(ws));
+  ws.on("close", () => {
+    clearTimeout(authTimer);
+    detach(ws);
+  });
+  ws.on("error", () => {
+    clearTimeout(authTimer);
+    detach(ws);
+  });
 });
 
 server.listen(PORT, HOST, () => {

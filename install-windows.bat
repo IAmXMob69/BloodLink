@@ -42,7 +42,7 @@ if not exist "client\dist\index.html" (
 )
 
 set HEARTH_PORT=3928
-set HEARTH_HOST=0.0.0.0
+set HEARTH_HOST=127.0.0.1
 echo.
 echo Starting BloodLink on http://127.0.0.1:3928
 echo Leave this window open. Friends on the same Wi-Fi can join at:
