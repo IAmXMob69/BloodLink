@@ -21,6 +21,7 @@
   ],
   "scripts": {
     "postinstall": "node scripts/ensure-data.js",
+    "audit": "npm audit --audit-level=moderate",
     "dev": "node scripts/dev.js",
     "server": "npm run start -w @hearth/server",
     "client": "npm run dev -w @hearth/client",
