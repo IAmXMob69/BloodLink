@@ -10,7 +10,7 @@
     "pack:win": "electron-builder --win nsis portable"
   },
   "devDependencies": {
-    "electron": "37.3.1",
+    "electron": "44.4.2",
     "electron-builder": "26.0.12"
   },
   "build": {
